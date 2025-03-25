@@ -77,22 +77,31 @@ fn spawn_chunk(
     tile: Handle<Image>,
     chunk_pos: IVec2,
     tile_size: f32,
+    scale: Vec3,
 ) {
-    commands.spawn((
+    let world_x = chunk_pos.x as f32 * tile_size * scale.x;
+    let world_y = chunk_pos.y as f32 * tile_size * scale.y;
+    
+    info!("Spawning chunk at position: {:?}, world coords: ({}, {}), with scale: {:?}, tile_size: {}", 
+          chunk_pos, world_x, world_y, scale, tile_size);
+    
+    let entity = commands.spawn((
         (
             Sprite::from_image(
                 tile
             ),
             Transform::from_translation(Vec3::new(
-                chunk_pos.x as f32 * tile_size ,
-                chunk_pos.y as f32 * tile_size,
-                0.0,
-            )),
-            Visibility::default(),
+                world_x,
+                world_y,
+                1.0,
+            )).with_scale(scale),
+            Visibility::Visible,
         ),
         ChunkPosition(chunk_pos),
         TileMarker,
-    ));
+    )).id();
+    
+    info!("Spawned chunk entity {:?} at position: {:?}", entity, chunk_pos);
 }
 
 // camera_pos_to_chunk_pos, chunk_pos_to_world_pos remain unchanged...
@@ -109,6 +118,7 @@ fn spawn_chunks_around_camera(
         let enabled_origins = chunk_manager_clone.get_enabled_tile_web_origins();
         if let Some((url, (_, tile_type))) = enabled_origins {
             for transform in camera_query.iter() {
+                info!("camera: {:?}", transform);
                 let camera_chunk_pos = camera_pos_to_chunk_pos(&transform.translation.xy(), res_manager.zoom_manager.tile_size);
                 let range = 4;
 
@@ -196,6 +206,7 @@ fn despawn_all_chunks(
 pub struct ZoomManager {
     pub zoom_level: u32,
     pub last_projection_level: f32,
+    pub scale: Vec3,
     pub tile_size: f32,
     zoom_level_changed: bool,
 }
@@ -206,7 +217,8 @@ impl Default for ZoomManager {
         Self {
             zoom_level: 14,
             last_projection_level: 1.0,
-            // Default tile size.
+            // Default tile size.#
+            scale: Vec3::splat(1.0),
             tile_size: 256 as f32,
             zoom_level_changed: false
         }
@@ -332,8 +344,10 @@ fn detect_zoom_level(
             let width = camera_rect(q_windows.single(), projection.clone()).0 / res_manager.zoom_manager.tile_size as f32;
             if width > 6.5 && res_manager.zoom_manager.zoom_level > 3 {
                 res_manager.zoom_manager.zoom_level -= 1;
+                res_manager.zoom_manager.scale*=2.0;
                 res_manager.chunk_manager.refrence_long_lat *= Coord {lat: 2., long: 2.};
             } else if width < 3.5 && res_manager.zoom_manager.zoom_level < 20 {
+                res_manager.zoom_manager.scale/=2.0;
                 res_manager.zoom_manager.zoom_level += 1;
                 res_manager.chunk_manager.refrence_long_lat /= Coord {lat: 2., long: 2.};
             } else {
@@ -342,9 +356,14 @@ fn detect_zoom_level(
 
             res_manager.zoom_manager.zoom_level_changed = true;
             projection.scale = 1.0;
+
+            /*
+            // Ok so we want to do all we can to not need to do this.
             camera.translation = res_manager.location_manager.location
                 .to_game_coords(res_manager.chunk_manager.refrence_long_lat, res_manager.zoom_manager.zoom_level, res_manager.zoom_manager.tile_size.into())
                 .extend(1.0);
+            
+             */
 
             res_manager.chunk_manager.update = true;
             clean.clean = true;
@@ -432,7 +451,8 @@ fn spawn_to_needed_chunks(
     let to_spawn_chunks: Vec<(IVec2, Vec<u8>)> = res_manager.chunk_manager.to_spawn_chunks.iter().map(|(pos, data)| (*pos, data.clone())).collect();
     for (chunk_pos, raw_image_data) in to_spawn_chunks {
         let tile_handle = images.add(buffer_to_bevy_image(raw_image_data, res_manager.zoom_manager.tile_size as u32));
-        spawn_chunk(&mut commands, tile_handle, chunk_pos, res_manager.zoom_manager.tile_size);
+        res_manager.zoom_manager.scale.z = 1.0;
+        spawn_chunk(&mut commands, tile_handle, chunk_pos, res_manager.zoom_manager.tile_size, res_manager.zoom_manager.scale);
         res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
     }
     res_manager.chunk_manager.to_spawn_chunks.clear();
