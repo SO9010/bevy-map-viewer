@@ -67,7 +67,7 @@ fn setup_camera(
             speed: 400.,
             enabled: true,
             zoom_to_cursor: false,
-            min_scale: 0.25,
+            min_scale: f32::NEG_INFINITY,
             max_scale: f32::INFINITY,
             min_x: f32::NEG_INFINITY,
             max_x: f32::INFINITY,

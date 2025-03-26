@@ -1,9 +1,11 @@
-use bevy::math::Vec2;
+use bevy::{ecs::system::Resource, math::{IVec2, Vec2, Vec3}, utils::{HashMap, HashSet}};
 use serde::{Deserialize, Serialize};
 use std::{
     f64::consts::PI,
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
+
+use crate::camera::camera_system::STARTING_DISPLACEMENT;
 
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -287,4 +289,127 @@ fn normalize_longitude(lon: f64) -> f64 {
         lon += 360.0;
     }
     lon
+}
+
+
+#[derive(Debug, Clone)]
+pub struct ZoomManager {
+    pub zoom_level: u32,
+    pub last_projection_level: f32,
+    pub scale: Vec3,
+    pub tile_size: f32,
+    pub zoom_level_changed: bool,
+}
+
+
+impl Default for ZoomManager {
+    fn default() -> Self {
+        Self {
+            zoom_level: 14,
+            last_projection_level: 1.0,
+            // Default tile size.#
+            scale: Vec3::splat(1.0),
+            tile_size: 256 as f32,
+            zoom_level_changed: false
+        }
+    }
+}
+
+impl ZoomManager {
+    pub fn has_changed(&self) -> bool {
+        self.zoom_level_changed
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TileType {
+    Raster,
+    Vector
+}
+
+#[derive(Debug, Clone)]
+pub struct ChunkManager {
+    pub spawned_chunks: HashSet<IVec2>,
+    pub to_spawn_chunks: HashMap<IVec2, Vec<u8>>, // Store raw image data
+    pub update: bool, // Store raw image data
+    pub refrence_long_lat: Coord,
+    pub tile_web_origin: HashMap<String, (bool, TileType)>,
+    pub tile_web_origin_changed: bool,
+}
+
+impl ChunkManager {
+    pub fn add_tile_web_origin(&mut self, url: String, enabled: bool, tile_type: TileType) {
+        self.tile_web_origin.insert(url, (enabled, tile_type));
+    }
+
+    pub fn enable_tile_web_origin(&mut self, url: &str) {
+        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
+            *enabled = true;
+        }
+    }
+    
+    pub fn disable_all_tile_web_origins(&mut self) {
+        for (_, (enabled, _)) in self.tile_web_origin.iter_mut() {
+            *enabled = false;
+        }
+    }
+    
+    pub fn enable_only_tile_web_origin(&mut self, url: &str) {
+        self.disable_all_tile_web_origins();
+        
+        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
+            *enabled = true;
+            self.tile_web_origin_changed = true;
+        }
+    }
+
+    pub fn get_enabled_tile_web_origins(&self) -> Option<(String, (bool, TileType))> {
+        for (url, (enabled, tile_type)) in self.tile_web_origin.clone() {
+            if enabled {
+                return Some((url, (enabled, tile_type)));
+            }
+        }
+        None
+    }
+}
+
+impl Default for ChunkManager {
+    fn default() -> Self {
+        let mut tile_web_origin = HashMap::default();
+        tile_web_origin.insert("https://tile.openstreetmap.org".to_string(), (false, TileType::Raster));
+        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=y".to_string(), (true, TileType::Raster));
+        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=m".to_string(), (false, TileType::Raster));
+        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=s".to_string(), (false, TileType::Raster));
+        tile_web_origin.insert("https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(), (false, TileType::Vector));
+        Self {
+            spawned_chunks: HashSet::default(),
+            to_spawn_chunks: HashMap::default(),
+            update: true,
+            // TODO MAKE THIS CONFIGURABLE BY THE DEVELOPER
+            refrence_long_lat: Coord { lat: 0.011, long: 0.011 },
+            tile_web_origin,
+            tile_web_origin_changed: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Location {
+    pub location: Coord,
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            location: STARTING_DISPLACEMENT,
+        }
+    }
+}
+
+
+#[derive(Debug, Resource, Clone, Default)]
+pub struct TileMapResources {
+    pub zoom_manager: ZoomManager,
+    pub chunk_manager: ChunkManager,
+    pub location_manager: Location,
 }

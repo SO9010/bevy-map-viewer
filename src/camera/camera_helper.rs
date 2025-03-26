@@ -1,6 +1,6 @@
 use bevy::{core_pipeline::core_2d::Camera2d, ecs::{query::{Changed, With}, system::{Query, Res, ResMut, Resource}}, math::Vec3, render::camera::{Camera, OrthographicProjection}, transform::components::GlobalTransform, window::Window};
 
-use crate::{tile_map::TileMapResources, types::{world_mercator_to_lat_lon, Coord}};
+use crate::types::{world_mercator_to_lat_lon, Coord, TileMapResources};
 
 
 
@@ -61,7 +61,6 @@ pub fn track_camera_position(
     
     if let Ok(transform) = camera_query.get_single() {
         let new_position = transform.translation();
-        
         // Check if position has changed
         if new_position != camera_position.position {
             camera_position.position = new_position;
@@ -78,7 +77,7 @@ pub fn camera_change(
 ) {
     let (_, camera_transform) = camera.single();
     if camera_position.changed {
-        let movement = camera_middle_to_lat_long(camera_transform, tile_map_res.zoom_manager.zoom_level, tile_map_res.zoom_manager.tile_size, tile_map_res.chunk_manager.refrence_long_lat);
+        let movement = camera_middle_to_lat_long(camera_transform, 14, tile_map_res.zoom_manager.tile_size, tile_map_res.chunk_manager.refrence_long_lat);
         if movement != tile_map_res.location_manager.location {
             tile_map_res.location_manager.location = movement;
             tile_map_res.chunk_manager.update = true;
