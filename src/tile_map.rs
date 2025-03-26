@@ -64,8 +64,6 @@ pub struct TileMapResources {
     pub location_manager: Location,
 }
 
-// ZoomManager, ChunkManager, Location structs remain unchanged...
-
 #[derive(Component)]
 struct ChunkPosition(IVec2);
 
@@ -79,8 +77,8 @@ fn spawn_chunk(
     tile_size: f32,
     scale: Vec3,
 ) {
-    let world_x = chunk_pos.x as f32 * tile_size * scale.x;
-    let world_y = chunk_pos.y as f32 * tile_size * scale.y;
+    let world_x = chunk_pos.x as f32 * tile_size;
+    let world_y = chunk_pos.y as f32 * tile_size;
     
     info!("Spawning chunk at position: {:?}, world coords: ({}, {}), with scale: {:?}, tile_size: {}", 
           chunk_pos, world_x, world_y, scale, tile_size);
@@ -94,7 +92,7 @@ fn spawn_chunk(
                 world_x,
                 world_y,
                 1.0,
-            )).with_scale(scale),
+            )),
             Visibility::Visible,
         ),
         ChunkPosition(chunk_pos),
@@ -103,8 +101,6 @@ fn spawn_chunk(
     
     info!("Spawned chunk entity {:?} at position: {:?}", entity, chunk_pos);
 }
-
-// camera_pos_to_chunk_pos, chunk_pos_to_world_pos remain unchanged...
 
 fn spawn_chunks_around_camera(
     camera_query: Query<&Transform, With<Camera>>,
@@ -130,7 +126,7 @@ fn spawn_chunks_around_camera(
                             let zoom_manager = res_manager.zoom_manager.clone();
                             let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
                             let world_pos = chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_size);
-                            let position = world_mercator_to_lat_lon(world_pos.x.into(), world_pos.y.into(), refrence_long_lat, zoom_manager.zoom_level, zoom_manager.tile_size);
+                            let position = world_mercator_to_lat_lon(world_pos.x.into(), world_pos.y.into(), refrence_long_lat, 14, zoom_manager.tile_size);
                             let url = url.clone();
                             let tile_type = tile_type.clone();
                             thread::spawn(move || {
@@ -167,6 +163,7 @@ fn despawn_outofrange_chunks(
     chunks_query: Query<(Entity, &Transform, &ChunkPosition)>,
     mut res_manager: ResMut<TileMapResources>,
 ) {
+    /*
     for camera_transform in camera_query.iter() {
         for (entity, chunk_transform, chunk_pos) in chunks_query.iter() {
             let chunk_world_pos = chunk_transform.translation.xy();
@@ -177,6 +174,7 @@ fn despawn_outofrange_chunks(
             }
         }
     }
+    */
 }
 
 fn clean_tile_map(
@@ -356,14 +354,6 @@ fn detect_zoom_level(
 
             res_manager.zoom_manager.zoom_level_changed = true;
             projection.scale = 1.0;
-
-            /*
-            // Ok so we want to do all we can to not need to do this.
-            camera.translation = res_manager.location_manager.location
-                .to_game_coords(res_manager.chunk_manager.refrence_long_lat, res_manager.zoom_manager.zoom_level, res_manager.zoom_manager.tile_size.into())
-                .extend(1.0);
-            
-             */
 
             res_manager.chunk_manager.update = true;
             clean.clean = true;
