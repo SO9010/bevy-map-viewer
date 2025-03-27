@@ -32,7 +32,7 @@
 // 10. Adjust based of viewport.
 
 use std::thread;
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 use crossbeam_channel::{bounded, Receiver, Sender};
 
 use crate::{api::{buffer_to_bevy_image, get_mvt_data, get_rasta_data}, camera::camera_helper::{camera_rect, EguiBlockInputState}, types::{world_mercator_to_lat_lon, Coord, Location, TileMapResources, TileType}};
@@ -48,7 +48,7 @@ impl Plugin for TileMapPlugin {
             .insert_resource(Clean::default())
             .add_event::<ZoomEvent>()
             .add_systems(FixedUpdate, (spawn_chunks_around_middle, spawn_to_needed_chunks))
-            .add_systems(Update, (detect_zoom_level, zoom_system))
+            .add_systems(Update, (detect_zoom_level))
             .add_systems(FixedUpdate, (despawn_outofrange_chunks, read_tile_map_receiver, clean_tile_map).chain())
             .insert_resource(ZoomCooldown(Timer::from_seconds(0.2, TimerMode::Repeating)));
     }
@@ -71,7 +71,6 @@ fn spawn_chunks_around_middle(
         if let Some((url, (_, tile_type))) = enabled_origins {
             let camera_chunk_pos = camera_pos_to_chunk_pos(&res_manager.location_manager.location.to_game_coords(res_manager.chunk_manager.refrence_long_lat, res_manager.zoom_manager.zoom_level, res_manager.zoom_manager.tile_size as f64), res_manager.zoom_manager.tile_size);
             let range = 4;
-            info!("{:?}", camera_chunk_pos);
 
             for y in (camera_chunk_pos.y - range)..=(camera_chunk_pos.y + range) {
                 for x in (camera_chunk_pos.x - range)..=(camera_chunk_pos.x + range) {
@@ -127,12 +126,11 @@ fn detect_zoom_level(
     mut cooldown: ResMut<ZoomCooldown>,
     time: Res<Time>,
     mut clean: ResMut<Clean>,
+    evr_scroll: EventReader<MouseWheel>,
 ) {
-    cooldown.0.tick(time.delta());
-
-    if cooldown.0.finished() && !state.block_input {
+    if cooldown.0.tick(time.delta()).finished() && !state.block_input {
         if let Ok(mut projection) = ortho_projection_query.get_single_mut() {
-            let width = camera_rect(q_windows.single(), projection.clone()).0 / res_manager.zoom_manager.tile_size as f32;
+            let width = camera_rect(q_windows.single(), projection.clone()).0 / res_manager.zoom_manager.tile_size as f32 / res_manager.zoom_manager.scale.x;
             if width > 6.5 && res_manager.zoom_manager.zoom_level > 3 {
                 res_manager.zoom_manager.zoom_level -= 1;
                 res_manager.zoom_manager.scale*=2.0;
@@ -145,35 +143,29 @@ fn detect_zoom_level(
                 return;
             }
 
+            // We need to get the displacement rather than the location.
+            if let Ok(mut camera) = camera_query.get_single_mut() {
+                
+                res_manager.chunk_manager.displacement = (res_manager.location_manager.location
+                    .to_game_coords(res_manager.chunk_manager.refrence_long_lat, 14, res_manager.zoom_manager.tile_size.into()).extend(1.0) - camera.translation).xy();
+            }
       
-
             res_manager.zoom_manager.zoom_level_changed = true;
-            projection.scale = 1.0;
-
             res_manager.chunk_manager.update = true;
             clean.clean = true;
-            cooldown.0.reset();
+            cooldown.0.reset(); // Ensure cooldown is reset
         }
     } else {
         res_manager.zoom_manager.zoom_level_changed = false;
+    }
+    if !evr_scroll.is_empty() {
+        cooldown.0.reset(); // Ensure cooldown is reset
     }
     if res_manager.chunk_manager.tile_web_origin_changed {
         res_manager.chunk_manager.tile_web_origin_changed = false;
         res_manager.zoom_manager.zoom_level_changed = true;
         res_manager.chunk_manager.update = true;
         clean.clean = true;
-        cooldown.0.reset();
-    }
-}
-
-fn zoom_system(
-    mut event_writer: EventWriter<ZoomEvent>,
-    mut cooldown: ResMut<ZoomCooldown>,
-    time: Res<Time>,
-) {
-    if cooldown.0.tick(time.delta()).finished() {
-        event_writer.send(ZoomEvent());
-
         cooldown.0.reset();
     }
 }
@@ -237,7 +229,7 @@ fn spawn_to_needed_chunks(
     for (chunk_pos, raw_image_data) in to_spawn_chunks {
         let tile_handle = images.add(buffer_to_bevy_image(raw_image_data, res_manager.zoom_manager.tile_size as u32));
         res_manager.zoom_manager.scale.z = 1.0;
-        spawn_chunk(&mut commands, tile_handle, chunk_pos, res_manager.zoom_manager.tile_size, res_manager.zoom_manager.scale);
+        spawn_chunk(&mut commands, tile_handle, chunk_pos, res_manager.zoom_manager.tile_size, res_manager.zoom_manager.scale, res_manager.chunk_manager.displacement);
         res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
     }
     res_manager.chunk_manager.to_spawn_chunks.clear();
@@ -249,9 +241,10 @@ fn spawn_chunk(
     chunk_pos: IVec2,
     tile_size: f32,
     scale: Vec3,
+    offset: Vec2,
 ) {
-    let world_x = chunk_pos.x as f32 * tile_size * scale.x;
-    let world_y = chunk_pos.y as f32 * tile_size * scale.x;
+    let world_x = chunk_pos.x as f32 * tile_size * scale.x - offset.x;
+    let world_y = chunk_pos.y as f32 * tile_size * scale.x - offset.y;
     commands.spawn((
         (
             Sprite::from_image(

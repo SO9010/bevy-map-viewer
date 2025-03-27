@@ -335,6 +335,7 @@ pub struct ChunkManager {
     pub refrence_long_lat: Coord,
     pub tile_web_origin: HashMap<String, (bool, TileType)>,
     pub tile_web_origin_changed: bool,
+    pub displacement: Vec2,
 }
 
 impl ChunkManager {
@@ -389,6 +390,7 @@ impl Default for ChunkManager {
             refrence_long_lat: Coord { lat: 0.011, long: 0.011 },
             tile_web_origin,
             tile_web_origin_changed: false,
+            displacement: Vec2::new(0.0, 0.0),
         }
     }
 }
