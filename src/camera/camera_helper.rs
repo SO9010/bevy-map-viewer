@@ -1,4 +1,4 @@
-use bevy::{core_pipeline::core_2d::Camera2d, ecs::{query::{Changed, With}, system::{Query, Res, ResMut, Resource}}, math::Vec3, render::camera::{Camera, OrthographicProjection}, transform::components::GlobalTransform, window::Window};
+use bevy::{core_pipeline::core_2d::Camera2d, ecs::{query::{Changed, With}, system::{Query, Res, ResMut, Resource}}, log::info, math::Vec3, render::camera::{Camera, OrthographicProjection}, transform::components::{GlobalTransform, Transform}, window::Window};
 
 use crate::types::{world_mercator_to_lat_lon, Coord, TileMapResources};
 
@@ -44,12 +44,12 @@ pub fn camera_space_to_lat_long_rect(
 }
 
 pub fn camera_middle_to_lat_long(
-    transform: &GlobalTransform,
     zoom: u32,
     quality: f32,
     reference: Coord,
+    camera_query: Query<&mut Transform, With<Camera>>,
 ) -> Coord {
-    let camera_translation = transform.translation();
+    let camera_translation = camera_query.get_single().unwrap().translation;
     world_mercator_to_lat_lon(camera_translation.x.into(), camera_translation.y.into(), reference, zoom, quality)
 }
 
@@ -71,13 +71,12 @@ pub fn track_camera_position(
 
 // Rewrite this to use event reader.
 pub fn camera_change(
-    camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+    camera_query: Query<&mut Transform, With<Camera>>,
     camera_position: Res<CameraPosition>,
     mut tile_map_res: ResMut<TileMapResources>,
 ) {
-    let (_, camera_transform) = camera.single();
     if camera_position.changed {
-        let movement = camera_middle_to_lat_long(camera_transform, 14, tile_map_res.zoom_manager.tile_size, tile_map_res.chunk_manager.refrence_long_lat);
+        let movement = camera_middle_to_lat_long(14, tile_map_res.zoom_manager.tile_size, tile_map_res.chunk_manager.refrence_long_lat, camera_query);
         if movement != tile_map_res.location_manager.location {
             tile_map_res.location_manager.location = movement;
             tile_map_res.chunk_manager.update = true;

@@ -142,10 +142,12 @@ fn detect_zoom_level(
             } else {
                 return;
             }
+            
+            let layer = res_manager.chunk_manager.layer_management.last().unwrap()+1.0;
+            res_manager.chunk_manager.layer_management.push(layer);
+            res_manager.zoom_manager.scale.z = layer;
 
-            // We need to get the displacement rather than the location.
-            if let Ok(mut camera) = camera_query.get_single_mut() {
-                
+            if let Ok(camera) = camera_query.get_single_mut() {
                 res_manager.chunk_manager.displacement = (res_manager.location_manager.location
                     .to_game_coords(res_manager.chunk_manager.refrence_long_lat, 14, res_manager.zoom_manager.tile_size.into()).extend(1.0) - camera.translation).xy();
             }
@@ -153,7 +155,7 @@ fn detect_zoom_level(
             res_manager.zoom_manager.zoom_level_changed = true;
             res_manager.chunk_manager.update = true;
             clean.clean = true;
-            cooldown.0.reset(); // Ensure cooldown is reset
+            cooldown.0.reset();
         }
     } else {
         res_manager.zoom_manager.zoom_level_changed = false;
@@ -177,7 +179,7 @@ type ChunkSenderType = Sender<ChunkData>;
 type ChunkReceiverType = Receiver<ChunkData>;
 
 #[derive(Component)]
-struct ChunkPosition(IVec2);
+struct ChunkLayer(f32);
 
 #[derive(Component)]
 struct TileMarker;
@@ -228,7 +230,6 @@ fn spawn_to_needed_chunks(
     let to_spawn_chunks: Vec<(IVec2, Vec<u8>)> = res_manager.chunk_manager.to_spawn_chunks.iter().map(|(pos, data)| (*pos, data.clone())).collect();
     for (chunk_pos, raw_image_data) in to_spawn_chunks {
         let tile_handle = images.add(buffer_to_bevy_image(raw_image_data, res_manager.zoom_manager.tile_size as u32));
-        res_manager.zoom_manager.scale.z = 1.0;
         spawn_chunk(&mut commands, tile_handle, chunk_pos, res_manager.zoom_manager.tile_size, res_manager.zoom_manager.scale, res_manager.chunk_manager.displacement);
         res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
     }
@@ -253,11 +254,11 @@ fn spawn_chunk(
             Transform::from_translation(Vec3::new(
                 world_x,
                 world_y,
-                1.0,
+                scale.z,
             )).with_scale(scale),
             Visibility::Visible,
         ),
-        ChunkPosition(chunk_pos),
+        ChunkLayer(scale.z),
         TileMarker,
     ));
 }
@@ -267,7 +268,7 @@ fn spawn_chunk(
 fn despawn_outofrange_chunks(
     mut commands: Commands,
     camera_query: Query<&Transform, With<Camera>>,
-    chunks_query: Query<(Entity, &Transform, &ChunkPosition)>,
+    chunks_query: Query<(Entity, &Transform, &ChunkLayer)>,
     mut res_manager: ResMut<TileMapResources>,
 ) {
     /*
@@ -292,12 +293,12 @@ struct Clean {
 fn clean_tile_map(
     mut res_manager: ResMut<TileMapResources>,
     commands: Commands,
-    chunk_query: Query<(Entity, &ChunkPosition)>,
+    chunk_query: Query<(Entity, &ChunkLayer)>,
     mut clean: ResMut<Clean>,
 ) {
     if clean.clean {
         clean.clean = false;
-        despawn_all_chunks(commands, chunk_query);
+        // despawn_all_chunks(commands, chunk_query);
         res_manager.chunk_manager.spawned_chunks.clear();
         res_manager.chunk_manager.to_spawn_chunks.clear();
     }
@@ -305,7 +306,7 @@ fn clean_tile_map(
 
 fn despawn_all_chunks(
     mut commands: Commands,
-    chunks_query: Query<(Entity, &ChunkPosition)>,
+    chunks_query: Query<(Entity, &ChunkLayer)>,
 ) {
     for (entity, _) in chunks_query.iter() {
         commands.entity(entity).despawn_recursive();

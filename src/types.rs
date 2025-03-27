@@ -336,6 +336,7 @@ pub struct ChunkManager {
     pub tile_web_origin: HashMap<String, (bool, TileType)>,
     pub tile_web_origin_changed: bool,
     pub displacement: Vec2,
+    pub layer_management: Vec<f32>,
 }
 
 impl ChunkManager {
@@ -391,6 +392,7 @@ impl Default for ChunkManager {
             tile_web_origin,
             tile_web_origin_changed: false,
             displacement: Vec2::new(0.0, 0.0),
+            layer_management: vec![0.0],
         }
     }
 }
