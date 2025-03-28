@@ -1,15 +1,19 @@
-use bevy::{ecs::system::Resource, math::{IVec2, Vec2, Vec3}, utils::{HashMap, HashSet}};
+use bevy::{
+    ecs::system::Resource,
+    math::{IVec2, Vec2, Vec3},
+    utils::{HashMap, HashSet},
+};
 use serde::{Deserialize, Serialize};
 use std::{
-    f64::consts::PI,
+    f32::consts::PI,
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
 
 use crate::camera::camera_system::STARTING_DISPLACEMENT;
-// TODO: make this all a lot cleaner, organised, and add displacment in.
-// Rename tile_size to tile_quality
-// Make sure that all varible names make sense and are nice.
 
+//------------------------------------------------------------------------------
+// Basic Types and Structures
+//------------------------------------------------------------------------------
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WorldSpaceRect {
     pub top_left: Coord,
@@ -19,7 +23,7 @@ pub struct WorldSpaceRect {
 pub enum DistanceType {
     Km,
     M,
-    CM
+    CM,
 }
 
 impl std::fmt::Debug for DistanceType {
@@ -32,7 +36,10 @@ impl std::fmt::Debug for DistanceType {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, Copy,)]
+//------------------------------------------------------------------------------
+// Coordinate System and Transformations
+//------------------------------------------------------------------------------
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct Coord {
     pub lat: f32,
@@ -72,21 +79,20 @@ impl Coord {
 
         Vec2::new(x as f32, y as f32)
     }
-    
+
     // https://stackoverflow.com/questions/639695/how-to-convert-latitude-or-longitude-to-meters
-    pub fn distance(&self, other: &Coord) -> (f64, DistanceType) {
+    pub fn distance(&self, other: &Coord) -> (f32, DistanceType) {
         let earth_radius_in_km = 6378.137;
-        let lat1 = self.lat as f64 * PI / 180.0;
-        let lat2 = other.lat as f64 * PI / 180.0;
+        let lat1 = self.lat * PI / 180.0;
+        let lat2 = other.lat * PI / 180.0;
         let d_lat = lat2 - lat1;
-        let d_lon = (other.long - self.long) as f64 * PI / 180.0;
-        
-        let a = (d_lat/2.0).sin() * (d_lat/2.0).sin() + 
-                lat1.cos() * lat2.cos() * 
-                (d_lon/2.0).sin() * (d_lon/2.0).sin();
-        let c = 2.0 * ((a).sqrt().atan2((1.0-a).sqrt()));
+        let d_lon = (other.long - self.long) * PI / 180.0;
+
+        let a = (d_lat / 2.0).sin() * (d_lat / 2.0).sin()
+            + lat1.cos() * lat2.cos() * (d_lon / 2.0).sin() * (d_lon / 2.0).sin();
+        let c = 2.0 * ((a).sqrt().atan2((1.0 - a).sqrt()));
         let d = earth_radius_in_km * c;
-        
+
         if d * 1000. > 999. {
             (d, DistanceType::Km)
         } else {
@@ -117,6 +123,10 @@ impl Coord {
         }
     }
 }
+
+//------------------------------------------------------------------------------
+// Coordinate Operations Implementation
+//------------------------------------------------------------------------------
 impl std::ops::Mul for Coord {
     type Output = Self;
 
@@ -189,6 +199,9 @@ impl DivAssign for Coord {
     }
 }
 
+//------------------------------------------------------------------------------
+// Tile System and Conversions
+//------------------------------------------------------------------------------
 pub fn tile_to_coords(x: i32, y: i32, zoom: u32) -> Coord {
     let n = 2_i32.pow(zoom) as f32;
     let lon = x as f32 / n * 360.0 - 180.0;
@@ -215,9 +228,9 @@ impl Tile {
     }
 
     pub fn to_lat_long(&self) -> Coord {
-        let n = 2.0f64.powi(self.zoom as i32);
-        let lon_deg = self.x as f64 / n * 360.0 - 180.0;
-        let lat_deg = (PI * (1.0 - 2.0 * self.y as f64 / n))
+        let n = 2.0f32.powi(self.zoom as i32);
+        let lon_deg = self.x as f32 / n * 360.0 - 180.0;
+        let lat_deg = (PI * (1.0 - 2.0 * self.y as f32 / n))
             .sinh()
             .atan()
             .to_degrees();
@@ -234,14 +247,19 @@ impl Tile {
     }
 }
 
+//------------------------------------------------------------------------------
+// Utility Functions
+//------------------------------------------------------------------------------
 pub fn level_to_tile_width(level: u32) -> f32 {
     360.0 / (2_i32.pow(level) as f32)
 }
 
+// Think of better name for this.
 pub fn world_mercator_to_lat_lon(
-    x_offset: f64,
-    y_offset: f64,
+    x_offset: f32,
+    y_offset: f32,
     reference: Coord,
+    displacement: Vec2,
     zoom: u32,
     quality: f32,
 ) -> Coord {
@@ -249,50 +267,23 @@ pub fn world_mercator_to_lat_lon(
     let refrence = reference.to_mercator();
 
     // Calculate meters per pixel (adjust for your tile setup)
-    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(zoom as i32)); // At zoom level N
-    let scale = meters_per_tile / quality as f64;
+    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f32.powi(zoom as i32)); // At zoom level N
+    let scale = meters_per_tile / quality;
 
     // Apply offsets with corrected scale
-    let global_x = refrence.x as f64 + (x_offset * scale);
-    let global_y = refrence.y as f64 + (y_offset * scale);
+    let global_x = refrence.x + ((x_offset + displacement.x) * scale);
+    let global_y = refrence.y + ((y_offset + displacement.y) * scale);
 
     // Inverse Mercator to convert back to lat/lon
     let lon = (global_x / 20037508.34) * 180.0;
     let lat = (global_y / 20037508.34 * 180.0).to_radians();
-    let lat = 2.0 * lat.exp().atan() - std::f64::consts::FRAC_PI_2;
+    let lat = 2.0 * lat.exp().atan() - std::f32::consts::FRAC_PI_2;
     let lat = lat.to_degrees();
 
-    Coord::new(lat as f32, normalize_longitude(lon) as f32)
+    Coord::new(lat, normalize_longitude(lon))
 }
 
-pub fn lat_lon_to_world_mercator_with_offset(
-    lat: f64,
-    lon: f64,
-    reference: Coord,
-    zoom: u32,
-    quality: u32,
-) -> (f64, f64) {
-    // Convert reference point to Web Mercator
-
-    let refrence = reference.to_mercator();
-
-    // Calculate meters per pixel (adjust for your tile setup)
-    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(zoom as i32)); // At zoom level N
-    let scale = meters_per_tile / quality as f64;
-
-    // Convert lat/lon to world mercator coordinates
-    let x = lon * 20037508.34 / 180.0;
-    let y = (lat.to_radians().tan() + 1.0 / lat.to_radians().cos()).ln() * 20037508.34
-        / std::f64::consts::PI;
-
-    // Apply offsets with corrected scale
-    let x_offset = (x - refrence.x as f64) / scale;
-    let y_offset = (y - refrence.y as f64) / scale;
-
-    (x_offset, y_offset)
-}
-
-fn normalize_longitude(lon: f64) -> f64 {
+fn normalize_longitude(lon: f32) -> f32 {
     let mut lon = lon;
     while lon > 180.0 {
         lon -= 360.0;
@@ -303,7 +294,9 @@ fn normalize_longitude(lon: f64) -> f64 {
     lon
 }
 
-
+//------------------------------------------------------------------------------
+// Managers and Resources
+//------------------------------------------------------------------------------
 #[derive(Debug, Clone)]
 pub struct ZoomManager {
     pub zoom_level: u32,
@@ -313,7 +306,6 @@ pub struct ZoomManager {
     pub zoom_level_changed: bool,
 }
 
-
 impl Default for ZoomManager {
     fn default() -> Self {
         Self {
@@ -322,7 +314,7 @@ impl Default for ZoomManager {
             // Default tile size.#
             scale: Vec3::splat(1.0),
             tile_size: 256 as f32,
-            zoom_level_changed: false
+            zoom_level_changed: false,
         }
     }
 }
@@ -336,14 +328,14 @@ impl ZoomManager {
 #[derive(Debug, Clone)]
 pub enum TileType {
     Raster,
-    Vector
+    Vector,
 }
 
 #[derive(Debug, Clone)]
 pub struct ChunkManager {
     pub spawned_chunks: HashSet<IVec2>,
     pub to_spawn_chunks: HashMap<IVec2, Vec<u8>>, // Store raw image data
-    pub update: bool, // Store raw image data
+    pub update: bool,                             // Store raw image data
     pub refrence_long_lat: Coord,
     pub tile_web_origin: HashMap<String, (bool, TileType)>,
     pub tile_web_origin_changed: bool,
@@ -361,16 +353,16 @@ impl ChunkManager {
             *enabled = true;
         }
     }
-    
+
     pub fn disable_all_tile_web_origins(&mut self) {
         for (_, (enabled, _)) in self.tile_web_origin.iter_mut() {
             *enabled = false;
         }
     }
-    
+
     pub fn enable_only_tile_web_origin(&mut self, url: &str) {
         self.disable_all_tile_web_origins();
-        
+
         if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
             *enabled = true;
             self.tile_web_origin_changed = true;
@@ -390,16 +382,34 @@ impl ChunkManager {
 impl Default for ChunkManager {
     fn default() -> Self {
         let mut tile_web_origin = HashMap::default();
-        tile_web_origin.insert("https://tile.openstreetmap.org".to_string(), (false, TileType::Raster));
-        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=y".to_string(), (true, TileType::Raster));
-        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=m".to_string(), (false, TileType::Raster));
-        tile_web_origin.insert("https://mt1.google.com/vt/lyrs=s".to_string(), (false, TileType::Raster));
-        tile_web_origin.insert("https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(), (false, TileType::Vector));
+        tile_web_origin.insert(
+            "https://tile.openstreetmap.org".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=y".to_string(),
+            (true, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=m".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=s".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(),
+            (false, TileType::Vector),
+        );
         Self {
             spawned_chunks: HashSet::default(),
             to_spawn_chunks: HashMap::default(),
             update: true,
-            refrence_long_lat: Coord { lat: 0.011, long: 0.011 },
+            refrence_long_lat: Coord {
+                lat: 0.011,
+                long: 0.011,
+            },
             tile_web_origin,
             tile_web_origin_changed: false,
             displacement: Vec2::new(0.0, 0.0),
@@ -420,7 +430,6 @@ impl Default for Location {
         }
     }
 }
-
 
 #[derive(Debug, Resource, Clone, Default)]
 pub struct TileMapResources {

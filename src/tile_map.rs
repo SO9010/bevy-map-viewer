@@ -77,6 +77,7 @@ fn spawn_chunks_around_middle(
                             world_pos.x.into(),
                             world_pos.y.into(),
                             refrence_long_lat,
+                            Vec2::ZERO,
                             res_manager.zoom_manager.zoom_level,
                             zoom_manager.tile_size,
                         );

@@ -3,10 +3,10 @@ use camera::CameraPlugin;
 use tile_map::TileMapPlugin;
 use types::{world_mercator_to_lat_lon, TileMapResources};
 
-mod camera;
-mod types;
 mod api;
+mod camera;
 mod tile_map;
+mod types;
 
 fn main() {
     App::new()
@@ -26,9 +26,20 @@ pub fn handle_mouse(
     let (camera, camera_transform) = camera.single();
     if buttons.pressed(MouseButton::Left) {
         if let Some(position) = q_windows.single().cursor_position() {
-            let world_pos = camera.viewport_to_world_2d(camera_transform, position).unwrap();
-            info!("World position: {:?}", world_pos);
-            info!("{:?}", world_mercator_to_lat_lon((world_pos.x+res_manager.chunk_manager.displacement.x) as f64, (world_pos.y+res_manager.chunk_manager.displacement.y) as f64, res_manager.chunk_manager.refrence_long_lat, 14, res_manager.zoom_manager.tile_size));
+            let world_pos = camera
+                .viewport_to_world_2d(camera_transform, position)
+                .unwrap();
+            info!(
+                "{:?}",
+                world_mercator_to_lat_lon(
+                    world_pos.x,
+                    world_pos.y,
+                    res_manager.chunk_manager.refrence_long_lat,
+                    res_manager.chunk_manager.displacement,
+                    14,
+                    res_manager.zoom_manager.tile_size
+                )
+            );
         }
-    }   
+    }
 }
