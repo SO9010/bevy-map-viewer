@@ -6,7 +6,9 @@ use std::{
 };
 
 use crate::camera::camera_system::STARTING_DISPLACEMENT;
-
+// TODO: make this all a lot cleaner, organised, and add displacment in.
+// Rename tile_size to tile_quality
+// Make sure that all varible names make sense and are nice.
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WorldSpaceRect {
@@ -112,6 +114,16 @@ impl Coord {
         Vec2 {
             x: x_offset,
             y: y_offset,
+        }
+    }
+}
+impl std::ops::Mul for Coord {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Coord {
+            lat: self.lat * rhs.lat,
+            long: self.long * rhs.long,
         }
     }
 }
@@ -387,7 +399,6 @@ impl Default for ChunkManager {
             spawned_chunks: HashSet::default(),
             to_spawn_chunks: HashMap::default(),
             update: true,
-            // TODO MAKE THIS CONFIGURABLE BY THE DEVELOPER
             refrence_long_lat: Coord { lat: 0.011, long: 0.011 },
             tile_web_origin,
             tile_web_origin_changed: false,

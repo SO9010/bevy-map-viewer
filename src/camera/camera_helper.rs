@@ -71,12 +71,15 @@ pub fn track_camera_position(
 
 // Rewrite this to use event reader.
 pub fn camera_change(
-    camera_query: Query<&mut Transform, With<Camera>>,
     camera_position: Res<CameraPosition>,
     mut tile_map_res: ResMut<TileMapResources>,
 ) {
     if camera_position.changed {
-        let movement = camera_middle_to_lat_long(14, tile_map_res.zoom_manager.tile_size, tile_map_res.chunk_manager.refrence_long_lat, camera_query);
+
+        // OK YIPPPPEEE SOLUTION FOUND WE NEED TO ENCOUNTER THE OFFSET.
+        let movement = world_mercator_to_lat_lon((camera_position.position.x + tile_map_res.chunk_manager.displacement.x) as f64, (camera_position.position.y + tile_map_res.chunk_manager.displacement.y) as f64, tile_map_res.chunk_manager.refrence_long_lat, 14, tile_map_res.zoom_manager.tile_size);
+        info!("Camera moved to: {:?}", movement);
+
         if movement != tile_map_res.location_manager.location {
             tile_map_res.location_manager.location = movement;
             tile_map_res.chunk_manager.update = true;
