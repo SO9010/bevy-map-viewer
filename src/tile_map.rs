@@ -134,6 +134,9 @@ fn detect_zoom_level(
             let width = camera_rect(q_windows.single(), projection.clone()).0
                 / res_manager.zoom_manager.tile_quality as f32
                 / res_manager.zoom_manager.scale.x;
+
+            // TODO: Rather than using this to figure out if we need to make the zoom level smaller we should use a calculation to see what zoom level size would best fit 
+            // the screen size. This would be a lot more accurate and would not require us to have a set zoom level.
             if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
                 res_manager.zoom_manager.zoom_level -= 1;
                 res_manager.zoom_manager.scale *= 2.0;
