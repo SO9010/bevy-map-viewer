@@ -1,23 +1,19 @@
 use bevy::{
     core_pipeline::core_2d::Camera2d,
     ecs::{
-        query::{Changed, With},
-        system::{Query, Res, ResMut, Resource},
+        event::{Event, EventReader, EventWriter}, query::{Changed, With}, system::{Query, ResMut, Resource}
     },
-    log::info,
-    math::Vec2,
-    math::Vec3,
+    math::{Vec2, Vec3},
     render::camera::{Camera, OrthographicProjection},
     transform::components::{GlobalTransform, Transform},
     window::Window,
 };
 
-use crate::types::{world_mercator_to_lat_lon, Coord, TileMapResources};
+use crate::types::{game_to_coord, Coord, TileMapResources, UpdateChunkEvent};
 
 #[derive(Resource, Default)]
 pub struct CameraPosition {
     pub position: Vec3,
-    pub changed: bool,
 }
 
 pub fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32, f32) {
@@ -26,6 +22,7 @@ pub fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32,
     (window_width, window_height)
 }
 
+#[allow(unused)]
 pub fn camera_space_to_lat_long_rect(
     transform: &GlobalTransform,
     window: &Window,
@@ -47,7 +44,7 @@ pub fn camera_space_to_lat_long_rect(
     let top = camera_translation.y - ((window_height * projection.scale) / 2.0);
 
     Some(geo::Rect::<f32>::new(
-        world_mercator_to_lat_lon(
+        game_to_coord(
             left.into(),
             bottom.into(),
             reference,
@@ -56,7 +53,7 @@ pub fn camera_space_to_lat_long_rect(
             quality,
         )
         .to_tuple(),
-        world_mercator_to_lat_lon(
+        game_to_coord(
             right.into(),
             top.into(),
             reference,
@@ -68,6 +65,7 @@ pub fn camera_space_to_lat_long_rect(
     ))
 }
 
+#[allow(unused)]
 pub fn camera_middle_to_lat_long(
     zoom: u32,
     quality: f32,
@@ -77,7 +75,7 @@ pub fn camera_middle_to_lat_long(
     displacement: Vec2,
 ) -> Coord {
     let camera_translation = camera_query.get_single().unwrap().translation;
-    world_mercator_to_lat_lon(
+    game_to_coord(
         camera_translation.x.into(),
         camera_translation.y.into(),
         reference,
@@ -87,41 +85,45 @@ pub fn camera_middle_to_lat_long(
     )
 }
 
+#[derive(Event)]
+pub struct CameraTrackingEvent {
+    pub position: Vec3,
+}
+
 pub fn track_camera_position(
     camera_query: Query<&GlobalTransform, (With<Camera2d>, Changed<GlobalTransform>)>,
     mut camera_position: ResMut<CameraPosition>,
+    mut camera_event_writer: EventWriter<CameraTrackingEvent>,
 ) {
-    camera_position.changed = false;
-
     if let Ok(transform) = camera_query.get_single() {
         let new_position = transform.translation();
-        // Check if position has changed
         if new_position != camera_position.position {
+            camera_event_writer.send(CameraTrackingEvent {
+                position: new_position,
+            });
             camera_position.position = new_position;
-            camera_position.changed = true;
         }
     }
 }
 
-// Rewrite this to use event reader.
 pub fn camera_change(
-    camera_position: Res<CameraPosition>,
     mut tile_map_res: ResMut<TileMapResources>,
+    mut camera_event_reader: EventReader<CameraTrackingEvent>,
+    mut event_writer: EventWriter<UpdateChunkEvent>,
 ) {
-    if camera_position.changed {
-        let movement = world_mercator_to_lat_lon(
-            camera_position.position.x,
-            camera_position.position.y,
+    for position in camera_event_reader.read() {
+        let movement = game_to_coord(
+            position.position.x,
+            position.position.y,
             tile_map_res.chunk_manager.refrence_long_lat,
             tile_map_res.chunk_manager.displacement,
             14,
-            tile_map_res.zoom_manager.tile_size,
+            tile_map_res.zoom_manager.tile_quality,
         );
-        info!("Camera moved to: {:?}", movement);
 
         if movement != tile_map_res.location_manager.location {
             tile_map_res.location_manager.location = movement;
-            tile_map_res.chunk_manager.update = true;
+            event_writer.send(UpdateChunkEvent);
         }
     }
 }

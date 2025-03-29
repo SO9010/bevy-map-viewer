@@ -2,9 +2,9 @@ use bevy::{core_pipeline::bloom::Bloom, prelude::*};
 use bevy_egui::EguiPlugin;
 use bevy_pancam::{DirectionKeys, PanCam, PanCamPlugin};
 
-use crate::types::Coord;
+use crate::types::TileMapResources;
 
-use super::{camera_helper::{absorb_egui_inputs, camera_change, track_camera_position, CameraPosition, EguiBlockInputState}, CameraConfig};
+use super::{camera_helper::{absorb_egui_inputs, camera_change, track_camera_position, CameraPosition, CameraTrackingEvent, EguiBlockInputState}, CameraConfig};
 
 pub struct CameraSystemPlugin {
     config: CameraConfig,
@@ -15,9 +15,6 @@ impl CameraSystemPlugin {
         CameraSystemPlugin { config }
     }
 }
-
-// TODO: Change this to not be a const.
-pub const STARTING_DISPLACEMENT: Coord = Coord::new(52.1951, 0.1313);
 
 impl Plugin for CameraSystemPlugin {
     fn build(&self, app: &mut App) {
@@ -30,6 +27,7 @@ impl Plugin for CameraSystemPlugin {
             app.add_plugins(PanCamPlugin)
                 .insert_resource(CameraPosition::default())
                 .add_systems(Startup, setup_camera)
+                .add_event::<CameraTrackingEvent>()
                 .add_systems(Update, (track_camera_position, camera_change));
         }
         
@@ -42,40 +40,44 @@ impl Plugin for CameraSystemPlugin {
 
 fn setup_camera(
     mut commands: Commands,
-    config: Res<CameraConfig>,
+    res_manager: Option<Res<TileMapResources>>,
 ) {
-    let starting = STARTING_DISPLACEMENT.to_game_coords(config.displacement, 14, config.tile_quality.into());
-    
-    commands.spawn((
-        Camera2d,
-        Camera {
-            hdr: true, // HDR is required for the bloom effect
-            ..default()
-        },
-        Transform {
-            translation: Vec3::new(starting.x, starting.y, 1.0),
-            ..Default::default()
-        },
-        PanCam {
-            grab_buttons: vec![MouseButton::Middle],
-            move_keys: DirectionKeys {
-                up:    vec![KeyCode::ArrowUp],
-                down:  vec![KeyCode::ArrowDown],
-                left:  vec![KeyCode::ArrowLeft],
-                right: vec![KeyCode::ArrowRight],
+    if let Some(res_manager) = res_manager {
+        let starting = res_manager.location_manager.location.to_game_coords(res_manager.clone());
+
+        commands.spawn((
+            Camera2d,
+            Camera {
+                hdr: true, // HDR is required for the bloom effect
+                ..default()
             },
-            speed: 400.,
-            enabled: true,
-            zoom_to_cursor: false,
-            min_scale: f32::NEG_INFINITY,
-            max_scale: f32::INFINITY,
-            min_x: f32::NEG_INFINITY,
-            max_x: f32::INFINITY,
-            min_y: f32::NEG_INFINITY,
-            max_y: f32::INFINITY,
-        },
-        Bloom::NATURAL,
-    ));
+            Transform {
+                translation: Vec3::new(starting.x, starting.y, 1.0),
+                ..Default::default()
+            },
+            PanCam {
+                grab_buttons: vec![MouseButton::Middle],
+                move_keys: DirectionKeys {
+                    up:    vec![KeyCode::ArrowUp],
+                    down:  vec![KeyCode::ArrowDown],
+                    left:  vec![KeyCode::ArrowLeft],
+                    right: vec![KeyCode::ArrowRight],
+                },
+                speed: 400.,
+                enabled: true,
+                zoom_to_cursor: false,
+                min_scale: f32::NEG_INFINITY,
+                max_scale: f32::INFINITY,
+                min_x: f32::NEG_INFINITY,
+                max_x: f32::INFINITY,
+                min_y: f32::NEG_INFINITY,
+                max_y: f32::INFINITY,
+            },
+            Bloom::NATURAL,
+        ));
+    } else {
+        error!("TileMapResources not found. Please add the tilemap addon first.");
+    }
 }
 
 fn handle_pancam(

@@ -56,25 +56,25 @@ pub fn tile_width_meters(zoom: u32) -> f64 {
     earth_circumference_meters / num_tiles
 }
 
-pub fn get_ofm_image(x: u64, y: u64, zoom: u64, tile_size: u32, _url: String) -> Image {
+pub fn get_ofm_image(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String) -> Image {
     let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string());
-    buffer_to_bevy_image(ofm_to_data_image(data, tile_size, zoom as u32), tile_size)
+    buffer_to_bevy_image(ofm_to_data_image(data, tile_quality, zoom as u32), tile_quality)
 }
 
 pub fn get_rasta_data(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
     send_image_tile_request(x, y, zoom, url)
 }
 
-pub fn get_mvt_data(x: u64, y: u64, zoom: u64, tile_size: u32, _url: String) -> Vec<u8> {
+pub fn get_mvt_data(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String) -> Vec<u8> {
     let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string());
-    ofm_to_data_image(data, tile_size, zoom as u32)
+    ofm_to_data_image(data, tile_quality, zoom as u32)
 }
 
-pub fn buffer_to_bevy_image(data: Vec<u8>, tile_size: u32) -> Image {
+pub fn buffer_to_bevy_image(data: Vec<u8>, tile_quality: u32) -> Image {
     Image::new(
         Extent3d {
-            width: tile_size,
-            height: tile_size,
+            width: tile_quality,
+            height: tile_quality,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,

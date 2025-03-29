@@ -1,7 +1,5 @@
 use bevy::{
-    ecs::system::Resource,
-    math::{IVec2, Vec2, Vec3},
-    utils::{HashMap, HashSet},
+    app::{App, Plugin, Startup}, ecs::{event::{Event, EventWriter}, system::Resource}, math::{IVec2, Vec2, Vec3}, utils::{HashMap, HashSet}
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -9,7 +7,61 @@ use std::{
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
 
-use crate::camera::camera_system::STARTING_DISPLACEMENT;
+pub struct InitTileMapPlugin;
+
+impl Plugin for InitTileMapPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(TileMapResources::new())
+            .add_event::<ZoomChangedEvent>()
+            .add_event::<UpdateChunkEvent>()
+            .add_systems(Startup, send_initial_events);
+    }
+}
+
+#[derive(Debug, Resource, Clone, Default)]
+pub struct TileMapResources {
+    pub zoom_manager: ZoomManager,
+    pub chunk_manager: ChunkManager,
+    pub location_manager: Location,
+}
+
+impl TileMapResources {
+    pub fn new() -> Self {
+        Self {
+            zoom_manager: ZoomManager::default(),
+            chunk_manager: ChunkManager::default(),
+            location_manager: Location::default(),
+        }
+    }
+
+    pub fn point_to_coord(
+        &self,
+        point: Vec2,
+    ) -> Coord {
+        let coord = game_to_coord(
+            point.x,
+            point.y,
+            self.chunk_manager.refrence_long_lat,
+            self.chunk_manager.displacement,
+            self.zoom_manager.starting_zoom,
+            self.zoom_manager.tile_quality
+        );
+        coord
+    }
+
+    pub fn coord_to_point(
+        &self,
+        coord: Coord,
+    ) -> Vec2 {
+        coord.to_game_coords(self.clone())
+    }
+
+    pub fn location_manager_to_point(
+        &self,
+    ) -> Vec2 {
+        self.location_manager.location.to_game_coords_without_displacement(self.clone())
+    }
+}
 
 //------------------------------------------------------------------------------
 // Basic Types and Structures
@@ -24,6 +76,12 @@ pub enum DistanceType {
     Km,
     M,
     CM,
+}
+
+#[derive(Debug, Clone)]
+pub enum TileType {
+    Raster,
+    Vector,
 }
 
 impl std::fmt::Debug for DistanceType {
@@ -100,14 +158,14 @@ impl Coord {
         }
     }
 
-    pub fn to_game_coords(&self, reference: Coord, zoom: u32, tile_quality: f64) -> Vec2 {
+    pub fn to_game_coords_without_displacement(&self, tile_map_resources: TileMapResources) -> Vec2 {
         let mut ref_coords = Vec2 { x: 1., y: 1. };
-        if reference.lat != 0. && reference.long != 0. {
-            ref_coords = reference.to_mercator();
+        if tile_map_resources.chunk_manager.refrence_long_lat.lat != 0.0 && tile_map_resources.chunk_manager.refrence_long_lat.long != 0.0 {
+            ref_coords = tile_map_resources.chunk_manager.refrence_long_lat.to_mercator();
         }
 
-        let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(zoom as i32)); // At zoom level N
-        let scale = (meters_per_tile / tile_quality) as f32;
+        let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(tile_map_resources.zoom_manager.zoom_level as i32)); // At zoom level N
+        let scale = meters_per_tile as f32 / tile_map_resources.zoom_manager.tile_quality;
 
         let x = self.long * 20037508.34 / 180.0;
         let y = (self.lat.to_radians().tan() + 1.0 / self.lat.to_radians().cos()).ln()
@@ -122,6 +180,39 @@ impl Coord {
             y: y_offset,
         }
     }
+
+    // We need to pass the map resources to this function to get the correct scale
+    pub fn to_game_coords(&self, tile_map_resources: TileMapResources) -> Vec2 {
+        let mut ref_coords = Vec2 { x: 1., y: 1. };
+        if tile_map_resources.chunk_manager.refrence_long_lat != Coord::default() {
+            ref_coords = tile_map_resources.chunk_manager.refrence_long_lat.to_mercator();
+        }
+
+        let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(tile_map_resources.zoom_manager.starting_zoom as i32));
+        let scale = meters_per_tile as f32 / tile_map_resources.zoom_manager.tile_quality;
+
+        let x = self.long * 20037508.34 / 180.0;
+        let y = (self.lat.to_radians().tan() + 1.0 / self.lat.to_radians().cos()).ln()
+            * 20037508.34
+            / std::f32::consts::PI;
+
+        let x_offset = (x - ref_coords.x) / scale;
+        let y_offset = (y - ref_coords.y) / scale;
+
+        Vec2 {
+            x: x_offset + tile_map_resources.chunk_manager.displacement.x,
+            y: y_offset + tile_map_resources.chunk_manager.displacement.y,
+        }
+    }
+}
+
+fn send_initial_events(
+    mut zoom_event_writer: EventWriter<ZoomChangedEvent>,
+    mut update_chunk_writer: EventWriter<UpdateChunkEvent>,
+) {
+    zoom_event_writer.send(ZoomChangedEvent);
+    
+    update_chunk_writer.send(UpdateChunkEvent);
 }
 
 //------------------------------------------------------------------------------
@@ -202,16 +293,6 @@ impl DivAssign for Coord {
 //------------------------------------------------------------------------------
 // Tile System and Conversions
 //------------------------------------------------------------------------------
-pub fn tile_to_coords(x: i32, y: i32, zoom: u32) -> Coord {
-    let n = 2_i32.pow(zoom) as f32;
-    let lon = x as f32 / n * 360.0 - 180.0;
-    let lat_rad = (std::f32::consts::PI * (1.0 - 2.0 * y as f32 / n))
-        .sinh()
-        .atan();
-    let lat = lat_rad.to_degrees();
-    Coord::new(lat, lon)
-}
-
 pub struct Tile {
     pub x: i32,
     pub y: i32,
@@ -237,9 +318,8 @@ impl Tile {
         Coord::new(lat_deg as f32, normalize_longitude(lon_deg) as f32)
     }
 
-    pub fn to_game_coords(&self, offset: Coord, zoom: u32, tile_quality: f64) -> Vec2 {
-        self.to_lat_long()
-            .to_game_coords(offset, zoom, tile_quality)
+    pub fn to_game_coords(&self, tile_map_resources: TileMapResources) -> Vec2 {
+        self.to_lat_long().to_game_coords(tile_map_resources)
     }
 
     pub fn to_mercator(&self) -> Vec2 {
@@ -254,8 +334,7 @@ pub fn level_to_tile_width(level: u32) -> f32 {
     360.0 / (2_i32.pow(level) as f32)
 }
 
-// Think of better name for this.
-pub fn world_mercator_to_lat_lon(
+pub fn game_to_coord(
     x_offset: f32,
     y_offset: f32,
     reference: Coord,
@@ -263,18 +342,14 @@ pub fn world_mercator_to_lat_lon(
     zoom: u32,
     quality: f32,
 ) -> Coord {
-    // Convert reference point to Web Mercator
     let refrence = reference.to_mercator();
 
-    // Calculate meters per pixel (adjust for your tile setup)
-    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f32.powi(zoom as i32)); // At zoom level N
+    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f32.powi(zoom as i32));
     let scale = meters_per_tile / quality;
 
-    // Apply offsets with corrected scale
     let global_x = refrence.x + ((x_offset + displacement.x) * scale);
     let global_y = refrence.y + ((y_offset + displacement.y) * scale);
 
-    // Inverse Mercator to convert back to lat/lon
     let lon = (global_x / 20037508.34) * 180.0;
     let lat = (global_y / 20037508.34 * 180.0).to_radians();
     let lat = 2.0 * lat.exp().atan() - std::f32::consts::FRAC_PI_2;
@@ -297,50 +372,52 @@ fn normalize_longitude(lon: f32) -> f32 {
 //------------------------------------------------------------------------------
 // Managers and Resources
 //------------------------------------------------------------------------------
+#[derive(Event)]
+pub struct ZoomChangedEvent;
+
 #[derive(Debug, Clone)]
 pub struct ZoomManager {
     pub zoom_level: u32,
-    pub last_projection_level: f32,
     pub scale: Vec3,
-    pub tile_size: f32,
-    pub zoom_level_changed: bool,
+    pub tile_quality: f32,
+    pub starting_zoom: u32,
 }
 
 impl Default for ZoomManager {
     fn default() -> Self {
         Self {
             zoom_level: 14,
-            last_projection_level: 1.0,
-            // Default tile size.#
             scale: Vec3::splat(1.0),
-            tile_size: 256 as f32,
-            zoom_level_changed: false,
+            tile_quality: 256 as f32,
+            starting_zoom: 14,
         }
     }
 }
 
 impl ZoomManager {
-    pub fn has_changed(&self) -> bool {
-        self.zoom_level_changed
+    #[allow(unused)]
+    fn new(zoom: u32, tile_quality: f32) -> Self {
+        Self {
+            zoom_level: zoom,
+            scale: Vec3::splat(1.0),
+            tile_quality: tile_quality,
+            starting_zoom: zoom,
+        }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum TileType {
-    Raster,
-    Vector,
-}
+#[derive(Event)]
+pub struct UpdateChunkEvent;
 
 #[derive(Debug, Clone)]
 pub struct ChunkManager {
     pub spawned_chunks: HashSet<IVec2>,
     pub to_spawn_chunks: HashMap<IVec2, Vec<u8>>, // Store raw image data
-    pub update: bool,                             // Store raw image data
     pub refrence_long_lat: Coord,
     pub tile_web_origin: HashMap<String, (bool, TileType)>,
     pub tile_web_origin_changed: bool,
     pub displacement: Vec2,
-    pub layer_management: Vec<f32>,
+    pub layer_management: Vec<f32>,    
 }
 
 impl ChunkManager {
@@ -405,7 +482,6 @@ impl Default for ChunkManager {
         Self {
             spawned_chunks: HashSet::default(),
             to_spawn_chunks: HashMap::default(),
-            update: true,
             refrence_long_lat: Coord {
                 lat: 0.011,
                 long: 0.011,
@@ -426,14 +502,7 @@ pub struct Location {
 impl Default for Location {
     fn default() -> Self {
         Self {
-            location: STARTING_DISPLACEMENT,
+            location: Coord::new(52.1951, 0.1313),
         }
     }
-}
-
-#[derive(Debug, Resource, Clone, Default)]
-pub struct TileMapResources {
-    pub zoom_manager: ZoomManager,
-    pub chunk_manager: ChunkManager,
-    pub location_manager: Location,
 }

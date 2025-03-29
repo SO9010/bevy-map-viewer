@@ -4,6 +4,7 @@ use super::{CameraConfig, CameraSystemPlugin};
 pub struct CameraPlugin;
 
 impl CameraPlugin {
+    #[allow(unused)]
     pub fn new(config: CameraConfig) -> CameraSystemPlugin {
         CameraSystemPlugin::new(config)
     }
