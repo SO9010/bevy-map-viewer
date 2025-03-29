@@ -18,10 +18,6 @@ impl Plugin for TileMapPlugin {
             .insert_resource(ChunkSender(tx))
             .add_plugins(InitTileMapPlugin)
             .insert_resource(Clean::default())
-            .add_systems(
-                FixedUpdate,
-                (spawn_chunks_around_middle, spawn_to_needed_chunks),
-            )
             .add_systems(Update, detect_zoom_level)
             .add_systems(
                 FixedUpdate,
@@ -29,6 +25,8 @@ impl Plugin for TileMapPlugin {
                     despawn_outofrange_chunks,
                     read_tile_map_receiver,
                     clean_tile_map,
+                    spawn_chunks_around_middle, 
+                    spawn_to_needed_chunks
                 )
                     .chain(),
             )
@@ -129,18 +127,18 @@ fn detect_zoom_level(
     mut chunk_writer: EventWriter<UpdateChunkEvent>,
 ) {
     if !evr_scroll.is_empty() {
-        cooldown.0.reset(); // Ensure cooldown is reset this currently isnt working propperly :(
+        cooldown.0.reset();
     }
     if cooldown.0.tick(time.delta()).finished() && !state.block_input {
         if let Ok(projection) = ortho_projection_query.get_single_mut() {
             let width = camera_rect(q_windows.single(), projection.clone()).0
                 / res_manager.zoom_manager.tile_quality as f32
                 / res_manager.zoom_manager.scale.x;
-            if width > 6.5 && res_manager.zoom_manager.zoom_level > 3 {
+            if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
                 res_manager.zoom_manager.zoom_level -= 1;
                 res_manager.zoom_manager.scale *= 2.0;
                 res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
-            } else if width < 3.5 && res_manager.zoom_manager.zoom_level < 20 {
+            } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
                 res_manager.zoom_manager.scale /= 2.0;
                 res_manager.zoom_manager.zoom_level += 1;
                 res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
