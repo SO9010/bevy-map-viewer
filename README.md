@@ -18,15 +18,16 @@ Add the following to your `Cargo.toml`:
 [dependencies]
 bevy_map_viewer = "0.1.0"
 ```
-## !Important! Render layers 
+## !Important! Render layers WIP
 
 This plugin uses Bevy's [RenderLayers](https://docs.rs/bevy/latest/bevy/render/view/struct.RenderLayers.html) system to manage how map tiles and game entities are displayed. Map tiles are rendered on layer 0 by default.
 
-To ensure your game entities appear above the map tiles:
+To help ensure your game entities appear above the map tiles:
 
 1. Add your game entities to render layer 1
 2. Configure your camera to see both layers 0 and 1
 
+If it still doesn't show, try rendering it at a higher z-level. I will work on this to ensure that it won't ever get in the way.
 
 
 ```rust
