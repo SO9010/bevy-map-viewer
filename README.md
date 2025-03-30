@@ -43,7 +43,7 @@ commands.spawn((
         transform: Transform::from_xyz(x, y, 0.0),
         ..default()
     },
-    RenderLayers::layer(1), // Entity will render above map tiles
+    RenderLayers::layer(0), // Entity will render above map tiles
 ));
 ```
 
