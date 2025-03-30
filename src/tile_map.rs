@@ -312,10 +312,10 @@ fn spawn_chunk(
             Sprite::from_image(tile),
             Transform::from_translation(Vec3::new(world_x, world_y, scale.z)).with_scale(scale),
             Visibility::Visible,
-            RenderLayers::layer(0),
         ),
         ChunkLayer(scale.z, chunk_pos),
         TileMarker,
+        RenderLayers::layer(0),
     ));
 }
 
