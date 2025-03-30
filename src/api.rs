@@ -11,12 +11,12 @@ pub fn tile_width_meters(zoom: u32) -> f64 {
     earth_circumference_meters / num_tiles
 }
 
-pub fn get_rasta_data(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
-    send_image_tile_request(x, y, zoom, url)
+pub fn get_rasta_data(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
+    send_image_tile_request(x, y, zoom, url, cache_dir)
 }
 
-pub fn get_mvt_data(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String) -> Vec<u8> {
-    let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string());
+pub fn get_mvt_data(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String, cache_dir: String) -> Vec<u8> {
+    let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(), cache_dir);
     ofm_to_data_image(data, tile_quality, zoom as u32)
 }
 
@@ -35,8 +35,8 @@ pub fn buffer_to_bevy_image(data: Vec<u8>, tile_quality: u32) -> Image {
 }
 
 /// https://wiki.openstreetmap.org/wiki/Raster_tile_providers
-fn send_image_tile_request(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
-    let cache_dir = format!("cache/{}", url);
+fn send_image_tile_request(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
+    let cache_dir = format!("{}/{}", cache_dir, url);
     let cache_file = format!("{}/{}_{}_{}.png", cache_dir, zoom, x, y);
     
     // Check if the file exists in the cache
@@ -82,8 +82,8 @@ fn png_to_image(data: Vec<u8>) -> Vec<u8> {
     rgba.to_vec()
 }
 
-fn send_vector_request(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
-    let cache_dir = "cache";
+fn send_vector_request(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
+    let cache_dir = format!("{}/{}", cache_dir, url);
     let cache_file = format!("{}/{}_{}_{}.pbf", cache_dir, zoom, x, y);
 
     // Check if the file exists in the cache

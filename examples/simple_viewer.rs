@@ -10,6 +10,7 @@ fn main() {
             starting_location: Coord::new(52.1951, 0.1313),
             starting_zoom: 14,
             tile_quality: 256.0,
+            cache_dir: "cache".to_string(),
         })
         .add_systems(Startup, setup_camera)
         .add_systems(Update, handle_mouse)

@@ -15,6 +15,7 @@ pub struct MapViewerPlugin {
     pub starting_location: Coord,
     pub starting_zoom: u32,
     pub tile_quality: f32,
+    pub cache_dir: String,
 }
 
 impl Plugin for MapViewerPlugin {
@@ -24,6 +25,7 @@ impl Plugin for MapViewerPlugin {
                 starting_location: self.starting_location,
                 starting_zoom: self.starting_zoom,
                 tile_quality: self.tile_quality,
+                cache_dir: self.cache_dir.clone(),
             });
            
     }

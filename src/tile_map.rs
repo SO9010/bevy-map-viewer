@@ -9,11 +9,15 @@ use crate::{
     types::{game_to_coord, Coord, InitTileMapPlugin, TileMapResources, TileType, UpdateChunkEvent, ZoomChangedEvent},
 };
 
+//------------------------------------------------------------------------------
+// Plugin
+//------------------------------------------------------------------------------
 // Todo: We should use render layers to manage the order of rendering tiles.
 pub struct TileMapPlugin {
     pub starting_location: Coord,
     pub starting_zoom: u32,
     pub tile_quality: f32,
+    pub cache_dir: String,
 }
 
 impl Plugin for TileMapPlugin {
@@ -25,6 +29,7 @@ impl Plugin for TileMapPlugin {
                 starting_location: self.starting_location,
                 starting_zoom: self.starting_zoom,
                 tile_quality: self.tile_quality,
+                cache_dir: self.cache_dir.clone(),
             })
             .insert_resource(Clean::default())
             .add_systems(Update, detect_zoom_level)
@@ -67,6 +72,7 @@ fn spawn_chunks_around_middle(
                         .contains(&chunk_pos)
                     {
                         let tx = chunk_sender.clone();
+                        let cache_folder = res_manager.cache_folder.clone();
                         let zoom_manager = res_manager.zoom_manager.clone();
                         let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
                         let world_pos = chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
@@ -90,6 +96,7 @@ fn spawn_chunks_around_middle(
                                         tile_coords.y as u64,
                                         zoom_manager.zoom_level as u64,
                                         url.to_string(),
+                                        cache_folder,
                                     );
                                     if let Err(e) = tx.send((chunk_pos, tile_image)) {
                                         error!("Failed to send chunk data: {:?}", e);
@@ -102,6 +109,7 @@ fn spawn_chunks_around_middle(
                                         zoom_manager.zoom_level as u64,
                                         zoom_manager.tile_quality as u32,
                                         url.to_string(),
+                                        cache_folder,
                                     );
                                     if let Err(e) = tx.send((chunk_pos, tile_image)) {
                                         error!("Failed to send chunk data: {:?}", e);
@@ -151,7 +159,7 @@ fn detect_zoom_level(
     if state.block_input {
         return;
     }
-    
+
     if cooldown.0.tick(time.delta()).finished() {
         if let Ok(projection) = ortho_projection_query.get_single_mut() {
             let mut width = camera_rect(q_windows.single(), projection.clone()).0
@@ -159,7 +167,7 @@ fn detect_zoom_level(
                 / res_manager.zoom_manager.scale.x;
             
             while width > 7. || width < 3. {
-                if width > 7. && res_manager.zoom_manager.zoom_level > 2 {
+                if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
                     res_manager.zoom_manager.zoom_level -= 1;
                     res_manager.zoom_manager.scale *= 2.0;
                     res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };

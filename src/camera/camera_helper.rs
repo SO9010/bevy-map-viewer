@@ -1,7 +1,7 @@
 use bevy::{
     core_pipeline::core_2d::Camera2d,
     ecs::{
-        event::{Event, EventReader, EventWriter}, query::{Changed, With}, system::{Query, ResMut, Resource}
+        event::{Event, EventReader, EventWriter}, query::{Changed, With}, system::{Query, ResMut}
     },
     math::{Vec2, Vec3},
     render::camera::{Camera, OrthographicProjection},
@@ -34,8 +34,8 @@ pub fn camera_space_to_lat_long_rect(
 
     Some(geo::Rect::<f32>::new(
         game_to_coord(
-            left.into(),
-            bottom.into(),
+            left,
+            bottom,
             reference,
             displacement,
             zoom,
@@ -43,8 +43,8 @@ pub fn camera_space_to_lat_long_rect(
         )
         .to_tuple(),
         game_to_coord(
-            right.into(),
-            top.into(),
+            right,
+            top,
             reference,
             displacement,
             zoom,
@@ -65,8 +65,8 @@ pub fn camera_middle_to_lat_long(
 ) -> Coord {
     let camera_translation = camera_query.get_single().unwrap().translation;
     game_to_coord(
-        camera_translation.x.into(),
-        camera_translation.y.into(),
+        camera_translation.x,
+        camera_translation.y,
         reference,
         displacement,
         zoom,

@@ -11,11 +11,12 @@ pub struct InitTileMapPlugin {
     pub starting_location: Coord,
     pub starting_zoom: u32,
     pub tile_quality: f32,
+    pub cache_dir: String,
 }
 
 impl Plugin for InitTileMapPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TileMapResources::new(self.starting_location, self.starting_zoom, self.tile_quality))
+        app.insert_resource(TileMapResources::new(self.starting_location, self.starting_zoom, self.tile_quality, self.cache_dir.clone()))
             .add_event::<ZoomChangedEvent>()
             .add_event::<UpdateChunkEvent>()
             .add_systems(Startup, send_initial_events);
@@ -27,14 +28,16 @@ pub struct TileMapResources {
     pub zoom_manager: ZoomManager,
     pub chunk_manager: ChunkManager,
     pub location_manager: Location,
+    pub cache_folder: String,
 }
 
 impl TileMapResources {
-    pub fn new(starting_location: Coord, zoom: u32, tile_quality: f32) -> Self {
+    pub fn new(starting_location: Coord, zoom: u32, tile_quality: f32, cache_dir: String) -> Self {
         Self {
             zoom_manager: ZoomManager::new(zoom, tile_quality),
             chunk_manager: ChunkManager::new(),
             location_manager: Location::new(starting_location),
+            cache_folder: cache_dir,
         }
     }
 
@@ -42,15 +45,15 @@ impl TileMapResources {
         &self,
         point: Vec2,
     ) -> Coord {
-        let coord = game_to_coord(
+        
+        game_to_coord(
             point.x,
             point.y,
             self.chunk_manager.refrence_long_lat,
             self.chunk_manager.displacement,
             self.zoom_manager.starting_zoom,
             self.zoom_manager.tile_quality
-        );
-        coord
+        )
     }
 
     pub fn coord_to_point(
@@ -319,7 +322,7 @@ impl Tile {
             .sinh()
             .atan()
             .to_degrees();
-        Coord::new(lat_deg as f32, normalize_longitude(lon_deg) as f32)
+        Coord::new(lat_deg, normalize_longitude(lon_deg))
     }
 
     pub fn to_game_coords(&self, tile_map_resources: TileMapResources) -> Vec2 {
@@ -388,7 +391,7 @@ impl Default for ZoomManager {
         Self {
             zoom_level: 14,
             scale: Vec3::splat(1.0),
-            tile_quality: 256 as f32,
+            tile_quality: 256_f32,
             starting_zoom: 14,
         }
     }
@@ -399,7 +402,7 @@ impl ZoomManager {
         Self {
             zoom_level: zoom,
             scale: Vec3::splat(1.0),
-            tile_quality: tile_quality,
+            tile_quality,
             starting_zoom: zoom,
         }
     }
