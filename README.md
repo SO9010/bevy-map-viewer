@@ -24,8 +24,8 @@ This plugin uses Bevy's [RenderLayers](https://docs.rs/bevy/latest/bevy/render/v
 
 To ensure your game entities appear above the map tiles:
 
-    1. Add your game entities to render layer 1
-    2. Configure your camera to see both layers 0 and 1
+1. Add your game entities to render layer 1
+2. Configure your camera to see both layers 0 and 1
 
 
 
