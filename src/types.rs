@@ -45,7 +45,6 @@ impl TileMapResources {
         &self,
         point: Vec2,
     ) -> Coord {
-        
         game_to_coord(
             point.x,
             point.y,
@@ -60,7 +59,13 @@ impl TileMapResources {
         &self,
         coord: Coord,
     ) -> Vec2 {
-        coord.to_game_coords(self.clone())
+        coord_to_game(
+            coord,     
+            self.chunk_manager.refrence_long_lat,
+            self.zoom_manager.starting_zoom,
+            self.zoom_manager.tile_quality,
+            self.chunk_manager.displacement
+        ).into()
     }
 
     pub fn location_manager_to_point(
@@ -190,26 +195,13 @@ impl Coord {
 
     // We need to pass the map resources to this function to get the correct scale
     pub fn to_game_coords(&self, tile_map_resources: TileMapResources) -> Vec2 {
-        let mut ref_coords = Vec2 { x: 1., y: 1. };
-        if tile_map_resources.chunk_manager.refrence_long_lat != Coord::default() {
-            ref_coords = tile_map_resources.chunk_manager.refrence_long_lat.to_mercator();
-        }
-
-        let meters_per_tile = 20037508.34 * 2.0 / (2.0_f64.powi(tile_map_resources.zoom_manager.starting_zoom as i32));
-        let scale = meters_per_tile as f32 / tile_map_resources.zoom_manager.tile_quality;
-
-        let x = self.long * 20037508.34 / 180.0;
-        let y = (self.lat.to_radians().tan() + 1.0 / self.lat.to_radians().cos()).ln()
-            * 20037508.34
-            / std::f32::consts::PI;
-
-        let x_offset = (x - ref_coords.x) / scale;
-        let y_offset = (y - ref_coords.y) / scale;
-
-        Vec2 {
-            x: x_offset + tile_map_resources.chunk_manager.displacement.x,
-            y: y_offset + tile_map_resources.chunk_manager.displacement.y,
-        }
+        coord_to_game(
+            *self,     
+            tile_map_resources.chunk_manager.refrence_long_lat,
+            tile_map_resources.zoom_manager.starting_zoom,
+            tile_map_resources.zoom_manager.tile_quality,
+            tile_map_resources.chunk_manager.displacement
+        ).into()
     }
 }
 
@@ -337,6 +329,27 @@ impl Tile {
 //------------------------------------------------------------------------------
 // Utility Functions
 //------------------------------------------------------------------------------
+
+pub fn coord_to_game(
+    coord: Coord,
+    reference: Coord,
+    zoom: u32,
+    quality: f32,
+    displacement: Vec2,
+) -> (f32, f32) {
+    let mercator_coord = coord.to_mercator();
+    let reference_mercator = reference.to_mercator();
+    
+    let meters_per_tile = 20037508.34 * 2.0 / (2.0_f32.powi(zoom as i32));
+    let scale = meters_per_tile / quality;
+    
+    // Reverse the calculations from global coordinates to offsets
+    let x_offset = ((mercator_coord.x - reference_mercator.x) / scale) - displacement.x;
+    let y_offset = ((mercator_coord.y - reference_mercator.y) / scale) - displacement.y;
+    
+    (x_offset, y_offset)
+}
+
 pub fn game_to_coord(
     x_offset: f32,
     y_offset: f32,

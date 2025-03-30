@@ -1,10 +1,12 @@
 use bevy::{prelude::*, window::PrimaryWindow};
+use bevy_egui::EguiPlugin;
 use bevy_map_viewer::{Coord, MapViewerPlugin, TileMapResources};
 use bevy_pancam::{DirectionKeys, PanCam, PanCamPlugin};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(EguiPlugin)
         .add_plugins(PanCamPlugin)
             .add_plugins(MapViewerPlugin { 
             starting_location: Coord::new(52.1951, 0.1313),
@@ -30,10 +32,12 @@ fn handle_mouse(
                 .viewport_to_world_2d(camera_transform, position)
                 .unwrap();
             
-            info!(
-                "{:?}",
-                res_manager.point_to_coord(world_pos),
-            );
+                info!(
+                    "{:?} | {:?} | {:?}",
+                    world_pos,
+                    res_manager.point_to_coord(world_pos),
+                    res_manager.coord_to_point(res_manager.point_to_coord(world_pos)),
+                );
         }
     }
 }
