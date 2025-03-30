@@ -9,6 +9,9 @@ use bevy::{
     window::Window,
 };
 
+#[cfg(feature = "ui_blocking")]
+use bevy::ecs::system::Resource;
+
 use crate::types::{game_to_coord, Coord, TileMapResources, UpdateChunkEvent};
 
 #[allow(unused)]
