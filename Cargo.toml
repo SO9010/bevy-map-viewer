@@ -27,7 +27,7 @@ bevy_tasks = { version = "0.15.3", optional = true }
 
 
 [features]
-default = ["standard","pancam"]
+default = ["standard","pancam","ui_blocking"]
 standard = [
     "tiles"
 ]
