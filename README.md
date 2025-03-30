@@ -32,7 +32,7 @@ To ensure your game entities appear above the map tiles:
 ```rust
 // Camera setup that can see both map tiles and game entities
 commands.spawn((
-    Camera2dBundle::default(),
+    Camera2d,
     RenderLayers::from_layers(&[0, 1]), // Camera sees both layers
 ));
 
