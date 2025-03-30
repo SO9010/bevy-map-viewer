@@ -11,17 +11,6 @@ use bevy::{
 
 use crate::types::{game_to_coord, Coord, TileMapResources, UpdateChunkEvent};
 
-#[derive(Resource, Default)]
-pub struct CameraPosition {
-    pub position: Vec3,
-}
-
-pub fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32, f32) {
-    let window_width = window.width() * projection.scale;
-    let window_height = window.height() * projection.scale;
-    (window_width, window_height)
-}
-
 #[allow(unused)]
 pub fn camera_space_to_lat_long_rect(
     transform: &GlobalTransform,
@@ -92,17 +81,13 @@ pub struct CameraTrackingEvent {
 
 pub fn track_camera_position(
     camera_query: Query<&GlobalTransform, (With<Camera2d>, Changed<GlobalTransform>)>,
-    mut camera_position: ResMut<CameraPosition>,
     mut camera_event_writer: EventWriter<CameraTrackingEvent>,
 ) {
     if let Ok(transform) = camera_query.get_single() {
         let new_position = transform.translation();
-        if new_position != camera_position.position {
-            camera_event_writer.send(CameraTrackingEvent {
-                position: new_position,
-            });
-            camera_position.position = new_position;
-        }
+        camera_event_writer.send(CameraTrackingEvent {
+            position: new_position,
+        });
     }
 }
 
@@ -128,10 +113,12 @@ pub fn camera_change(
     }
 }
 
+#[cfg(feature = "ui_blocking")]
 #[derive(Resource, Default)]
 pub struct EguiBlockInputState {
     pub block_input: bool,
 }
+#[cfg(feature = "ui_blocking")]
 pub fn absorb_egui_inputs(
     mut contexts: bevy_egui::EguiContexts,
     mut state: ResMut<EguiBlockInputState>,

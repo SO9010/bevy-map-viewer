@@ -1,64 +1,14 @@
 use std::{fs, io::{BufReader, Read}, path::Path};
 
-use bevy::{asset::RenderAssetUsages, ecs::system::Resource, image::Image, render::render_resource::{Extent3d, TextureDimension, TextureFormat}};
+use bevy::{asset::RenderAssetUsages, image::Image, render::render_resource::{Extent3d, TextureDimension, TextureFormat}};
 use mvt_reader::Reader;
+
 use raqote::{AntialiasMode, DrawOptions, DrawTarget, PathBuilder, SolidSource, Source, StrokeStyle};
-use rstar::{RTree, RTreeObject, AABB};
-
-use crate::types::{level_to_tile_width, Coord};
-
-#[derive(Resource, Clone)]
-pub struct OfmTiles {
-    pub tiles: RTree<Tile>,
-    pub tiles_to_render: Vec<Tile>,
-}
-
-#[derive(Clone)]
-pub struct Tile {
-    pub name: String,
-    pub image: Image,
-    pub tile_location: Coord,
-    pub zoom: u32,
-} 
-
-impl PartialEq for Tile {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.zoom == other.zoom && self.tile_location.lat == other.tile_location.lat && self.tile_location.long == other.tile_location.long
-    }
-}
-impl RTreeObject for Tile {
-    type Envelope = AABB<[f64; 2]>;
-
-    fn envelope(&self) -> Self::Envelope {
-        AABB::from_corners(
-            [self.tile_location.long as f64, self.tile_location.lat as f64],
-            [
-                self.tile_location.long as f64 + level_to_tile_width(self.zoom) as f64,
-                self.tile_location.lat as f64 + level_to_tile_width(self.zoom) as f64,
-            ],
-        )
-    }
-}
-impl Tile {
-    pub fn new(name: String, image: Image, tile_location: Coord, zoom: u32) -> Self {
-        Self {
-            name,
-            image,
-            tile_location,
-            zoom,
-        }
-    }
-}
 
 pub fn tile_width_meters(zoom: u32) -> f64 {
     let earth_circumference_meters = 40075016.686;
     let num_tiles = 2_u32.pow(zoom) as f64;
     earth_circumference_meters / num_tiles
-}
-
-pub fn get_ofm_image(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String) -> Image {
-    let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string());
-    buffer_to_bevy_image(ofm_to_data_image(data, tile_quality, zoom as u32), tile_quality)
 }
 
 pub fn get_rasta_data(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
@@ -84,7 +34,6 @@ pub fn buffer_to_bevy_image(data: Vec<u8>, tile_quality: u32) -> Image {
     )
 }
 
-/// Rather than getting a vector trile which can be tricky to work with, we get a buffer of an image 
 /// https://wiki.openstreetmap.org/wiki/Raster_tile_providers
 fn send_image_tile_request(x: u64, y: u64, zoom: u64, url: String) -> Vec<u8> {
     let cache_dir = format!("cache/{}", url);

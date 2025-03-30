@@ -2,21 +2,30 @@ use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::thread;
 
+#[cfg(feature = "ui_blocking")]
+use crate::camera::camera_helper::EguiBlockInputState;
 use crate::{
     api::{buffer_to_bevy_image, get_mvt_data, get_rasta_data},
-    camera::camera_helper::{camera_rect, EguiBlockInputState},
     types::{game_to_coord, Coord, InitTileMapPlugin, TileMapResources, TileType, UpdateChunkEvent, ZoomChangedEvent},
 };
 
 // Todo: We should use render layers to manage the order of rendering tiles.
-pub struct TileMapPlugin;
+pub struct TileMapPlugin {
+    pub starting_location: Coord,
+    pub starting_zoom: u32,
+    pub tile_quality: f32,
+}
 
 impl Plugin for TileMapPlugin {
     fn build(&self, app: &mut App) {
         let (tx, rx): (ChunkSenderType, ChunkReceiverType) = bounded(10);
         app.insert_resource(ChunkReceiver(rx))
             .insert_resource(ChunkSender(tx))
-            .add_plugins(InitTileMapPlugin)
+            .add_plugins(InitTileMapPlugin {
+                starting_location: self.starting_location,
+                starting_zoom: self.starting_zoom,
+                tile_quality: self.tile_quality,
+            })
             .insert_resource(Clean::default())
             .add_systems(Update, detect_zoom_level)
             .add_systems(
@@ -113,10 +122,18 @@ fn spawn_chunks_around_middle(
 #[derive(Resource)]
 struct ZoomCooldown(pub Timer);
 
+fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32, f32) {
+    return (
+        window.width() * projection.scale,
+        window.height() * projection.scale,
+    );
+}
+
 fn detect_zoom_level(
     mut res_manager: ResMut<TileMapResources>,
     mut ortho_projection_query: Query<&mut OrthographicProjection, With<Camera>>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
+    #[cfg(feature = "ui_blocking")]
     state: Res<EguiBlockInputState>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     mut cooldown: ResMut<ZoomCooldown>,
@@ -129,25 +146,35 @@ fn detect_zoom_level(
     if !evr_scroll.is_empty() {
         cooldown.0.reset();
     }
-    if cooldown.0.tick(time.delta()).finished() && !state.block_input {
+    
+    #[cfg(feature = "ui_blocking")]
+    if state.block_input {
+        return;
+    }
+    
+    if cooldown.0.tick(time.delta()).finished() {
         if let Ok(projection) = ortho_projection_query.get_single_mut() {
-            let width = camera_rect(q_windows.single(), projection.clone()).0
+            let mut width = camera_rect(q_windows.single(), projection.clone()).0
                 / res_manager.zoom_manager.tile_quality as f32
                 / res_manager.zoom_manager.scale.x;
-
-            // TODO: Rather than using this to figure out if we need to make the zoom level smaller we should use a calculation to see what zoom level size would best fit 
-            // the screen size. This would be a lot more accurate and would not require us to have a set zoom level.
-            if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
-                res_manager.zoom_manager.zoom_level -= 1;
-                res_manager.zoom_manager.scale *= 2.0;
-                res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
-            } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
-                res_manager.zoom_manager.scale /= 2.0;
-                res_manager.zoom_manager.zoom_level += 1;
-                res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
-            } else {
-                return;
+            
+            while width > 7. || width < 3. {
+                if width > 7. && res_manager.zoom_manager.zoom_level > 2 {
+                    res_manager.zoom_manager.zoom_level -= 1;
+                    res_manager.zoom_manager.scale *= 2.0;
+                    res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
+                } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
+                    res_manager.zoom_manager.scale /= 2.0;
+                    res_manager.zoom_manager.zoom_level += 1;
+                    res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
+                } else {
+                    return;
+                }
+                width = camera_rect(q_windows.single(), projection.clone()).0
+                    / res_manager.zoom_manager.tile_quality as f32
+                    / res_manager.zoom_manager.scale.x;
             }
+
 
             let layer = res_manager.chunk_manager.layer_management.last().unwrap() + 1.0;
             res_manager.chunk_manager.layer_management.push(layer);
@@ -160,8 +187,11 @@ fn detect_zoom_level(
 
             zoom_event.send(ZoomChangedEvent);
             chunk_writer.send(UpdateChunkEvent);
-            clean.clean = true;
+            res_manager.chunk_manager.spawned_chunks.clear();
+            res_manager.chunk_manager.to_spawn_chunks.clear();
             cooldown.0.reset();
+        } else {
+            error!("Failed to get camera projection");
         }
     }
     if res_manager.chunk_manager.tile_web_origin_changed {
@@ -180,7 +210,8 @@ type ChunkReceiverType = Receiver<ChunkData>;
 
 #[derive(Component)]
 #[allow(unused)]
-struct ChunkLayer(f32);
+// Chunklayer and chunk location
+struct ChunkLayer(f32, IVec2);
 
 #[derive(Component)]
 struct TileMarker;
@@ -240,6 +271,7 @@ fn spawn_to_needed_chunks(
             raw_image_data,
             res_manager.zoom_manager.tile_quality as u32,
         ));
+        res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
         spawn_chunk(
             &mut commands,
             tile_handle,
@@ -248,7 +280,6 @@ fn spawn_to_needed_chunks(
             res_manager.zoom_manager.scale,
             res_manager.chunk_manager.displacement,
         );
-        res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
     }
     res_manager.chunk_manager.to_spawn_chunks.clear();
 }
@@ -269,31 +300,53 @@ fn spawn_chunk(
             Transform::from_translation(Vec3::new(world_x, world_y, scale.z)).with_scale(scale),
             Visibility::Visible,
         ),
-        ChunkLayer(scale.z),
+        ChunkLayer(scale.z, chunk_pos),
         TileMarker,
     ));
 }
 
 // Despawn handling //
-#[allow(unused)]
+
 fn despawn_outofrange_chunks(
     mut commands: Commands,
     camera_query: Query<&Transform, With<Camera>>,
     chunks_query: Query<(Entity, &Transform, &ChunkLayer)>,
     mut res_manager: ResMut<TileMapResources>,
 ) {
-    /*
-    for camera_transform in camera_query.iter() {
-        for (entity, chunk_transform, chunk_pos) in chunks_query.iter() {
-            let chunk_world_pos = chunk_transform.translation.xy();
-            let distance = camera_transform.translation.xy().distance(chunk_world_pos);
-            if distance > res_manager.zoom_manager.tile_quality * 10.0 {
-                res_manager.chunk_manager.spawned_chunks.remove(&chunk_pos.0);
-                commands.entity(entity).despawn_recursive();
+    let mut chunks_to_remove = Vec::new();
+
+    if res_manager.chunk_manager.layer_management.len() > 2 {
+        let oldest_layer = res_manager.chunk_manager.layer_management[0];
+        for (entity, _, chunk_layer) in chunks_query.iter() {
+            if chunk_layer.0 == oldest_layer {
+                if !chunks_to_remove.contains(&(entity, chunk_layer.1)) {
+                    chunks_to_remove.push((entity, chunk_layer.1));
+                }            
+            }
+        }
+        res_manager.chunk_manager.layer_management.remove(0);
+    }
+    
+    if let Ok(camera_transform) = camera_query.get_single() {
+        let camera_pos = camera_transform.translation.xy();
+        for (entity, chunk_transform, chunk_layer) in chunks_query.iter() {
+            let chunk_world_pos: Vec2 = chunk_transform.translation.xy();
+            let distance = camera_pos.distance(chunk_world_pos);
+            
+            let threshold = res_manager.zoom_manager.tile_quality * 10.0 * res_manager.zoom_manager.scale.x;
+            
+            if distance > threshold {
+                if !chunks_to_remove.contains(&(entity, chunk_layer.1)) {
+                    chunks_to_remove.push((entity, chunk_layer.1));
+                }
             }
         }
     }
-    */
+
+    for (entity, chunk_pos) in chunks_to_remove {
+        res_manager.chunk_manager.spawned_chunks.remove(&chunk_pos);
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 #[derive(Resource, Clone, Default)]
@@ -304,21 +357,16 @@ struct Clean {
 #[allow(unused)]
 fn clean_tile_map(
     mut res_manager: ResMut<TileMapResources>,
-    commands: Commands,
+    mut commands: Commands,
     chunk_query: Query<(Entity, &ChunkLayer)>,
     mut clean: ResMut<Clean>,
 ) {
     if clean.clean {
         clean.clean = false;
-        // despawn_all_chunks(commands, chunk_query);
+        for (entity, _) in chunk_query.iter() {
+            commands.entity(entity).despawn_recursive();
+        }
         res_manager.chunk_manager.spawned_chunks.clear();
         res_manager.chunk_manager.to_spawn_chunks.clear();
-    }
-}
-
-#[allow(unused)]
-fn despawn_all_chunks(mut commands: Commands, chunks_query: Query<(Entity, &ChunkLayer)>) {
-    for (entity, _) in chunks_query.iter() {
-        commands.entity(entity).despawn_recursive();
     }
 }

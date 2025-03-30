@@ -1,24 +1,49 @@
 [package]
 name = "bevy_map_viewer"
+authors = ["Sameul Oldham <so9010sami@gmail.com>"]
+description = "Work with xyz tiles, such as the ones found on OpenStreetMap and google maps, in bevy!"
+readme = "README.md"
+repository = "https://github.com/yourusername/bevy-map-viewer"
+license = "Apache-2.0"
+keywords = ["bevy", "map", "tiles", "openstreetmap", "osm", "slippy"]
+categories = ["game-development", "graphics", "mapping"]
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = "0.15.1"
-bevy_pancam = "0.17.0"
+bevy = { version = "0.15.1", default-features = false }
 crossbeam-channel = "0.5.14"
-mvt-reader = "2.0.1"
-geo = "0.29.3"
-raqote = "0.8.5"
-rstar = "0.12.2"
-ureq = "3.0.10"
-image = "0.25.5"
-bevy_egui = "0.33.0"
-serde = "1.0.217"
-serde_json = "1.0.134"
-geojson = "0.24.1"
-bevy_prototype_lyon = "0.13.0"
-bevy_tasks = "0.15.3"
+bevy_pancam = { version = "0.17.0", optional = true }
+mvt-reader = { version = "2.0.1", optional = true }
+geo = { version = "0.30.0", optional = true }
+raqote = { version = "0.8.5", optional = true }
+rstar = { version = "0.12.2", optional = true }
+ureq = { version = "3.0.10", optional = true }
+image = { version = "0.25.5", optional = true }
+bevy_egui = { version = "0.33.0", optional = true }
+serde = { version = "1.0.217", features = ["derive"], optional = true }
+geojson = { version = "0.24.1", optional = true }
+bevy_tasks = { version = "0.15.3", optional = true }
+
+
+[features]
+default = ["standard","pancam"]
+standard = [
+    "tiles"
+]
+tiles = ["dep:image", "dep:ureq", "dep:mvt-reader", "dep:geo", "dep:raqote", "dep:rstar", "dep:geojson", "dep:serde"]
+ui_blocking = ["dep:bevy_egui"]
+pancam = ["dep:bevy_pancam"]
+
+[dev-dependencies]
+bevy = "0.15.1"
+
+[[example]]
+name = "simple_viewer"
+path = "examples/simple_viewer.rs"
+
+[package.metadata.docs.rs]
+features = ["standard"]
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

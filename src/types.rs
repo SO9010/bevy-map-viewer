@@ -7,11 +7,15 @@ use std::{
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
 
-pub struct InitTileMapPlugin;
+pub struct InitTileMapPlugin {
+    pub starting_location: Coord,
+    pub starting_zoom: u32,
+    pub tile_quality: f32,
+}
 
 impl Plugin for InitTileMapPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TileMapResources::new())
+        app.insert_resource(TileMapResources::new(self.starting_location, self.starting_zoom, self.tile_quality))
             .add_event::<ZoomChangedEvent>()
             .add_event::<UpdateChunkEvent>()
             .add_systems(Startup, send_initial_events);
@@ -26,11 +30,11 @@ pub struct TileMapResources {
 }
 
 impl TileMapResources {
-    pub fn new() -> Self {
+    pub fn new(starting_location: Coord, zoom: u32, tile_quality: f32) -> Self {
         Self {
-            zoom_manager: ZoomManager::default(),
-            chunk_manager: ChunkManager::default(),
-            location_manager: Location::default(),
+            zoom_manager: ZoomManager::new(zoom, tile_quality),
+            chunk_manager: ChunkManager::new(),
+            location_manager: Location::new(starting_location),
         }
     }
 
@@ -330,10 +334,6 @@ impl Tile {
 //------------------------------------------------------------------------------
 // Utility Functions
 //------------------------------------------------------------------------------
-pub fn level_to_tile_width(level: u32) -> f32 {
-    360.0 / (2_i32.pow(level) as f32)
-}
-
 pub fn game_to_coord(
     x_offset: f32,
     y_offset: f32,
@@ -395,7 +395,6 @@ impl Default for ZoomManager {
 }
 
 impl ZoomManager {
-    #[allow(unused)]
     fn new(zoom: u32, tile_quality: f32) -> Self {
         Self {
             zoom_level: zoom,
@@ -494,11 +493,23 @@ impl Default for ChunkManager {
     }
 }
 
+impl ChunkManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 #[derive(Debug, Clone)]
 pub struct Location {
     pub location: Coord,
 }
 
+impl Location {
+    fn new(coord: Coord) -> Self {
+        Self {
+            location: coord,
+        }
+    }
+}
 impl Default for Location {
     fn default() -> Self {
         Self {
