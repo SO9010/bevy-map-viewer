@@ -18,6 +18,36 @@ Add the following to your `Cargo.toml`:
 [dependencies]
 bevy_map_viewer = "0.1.0"
 ```
+## !Important! Render layers 
+
+This plugin uses Bevy's [RenderLayers](https://docs.rs/bevy/latest/bevy/render/view/struct.RenderLayers.html) system to manage how map tiles and game entities are displayed. Map tiles are rendered on layer 0 by default.
+
+To ensure your game entities appear above the map tiles:
+
+    1. Add your game entities to render layer 1
+    2. Configure your camera to see both layers 0 and 1
+
+
+
+```rust
+// Camera setup that can see both map tiles and game entities
+commands.spawn((
+    Camera2dBundle::default(),
+    RenderLayers::from_layers(&[0, 1]), // Camera sees both layers
+));
+
+// Game entities should use layer 1 to appear above the map
+commands.spawn((
+    SpriteBundle {
+        texture: asset_server.load("my_sprite.png"),
+        transform: Transform::from_xyz(x, y, 0.0),
+        ..default()
+    },
+    RenderLayers::layer(1), // Entity will render above map tiles
+));
+```
+
+Without this layering, your game entities might be hidden behind map tiles when they overlap, causing visual glitches and display issues.
 
 ## Usage
 

@@ -32,7 +32,6 @@ impl Plugin for MapViewerPlugin {
 }
 
 // Re-export important types so users don't need to import internal modules
-
 pub use camera::camera_helper::CameraTrackingEvent;
 pub use tile_map::TileMapPlugin;
 pub use types::{TileType, TileMapResources, Coord, UpdateChunkEvent, ZoomChangedEvent};
