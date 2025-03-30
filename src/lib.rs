@@ -36,3 +36,5 @@ pub use camera::camera_helper::CameraTrackingEvent;
 pub use tile_map::TileMapPlugin;
 pub use types::{TileType, TileMapResources, Coord, UpdateChunkEvent, ZoomChangedEvent};
 pub use api::{get_rasta_data, get_mvt_data, buffer_to_bevy_image};
+#[cfg(feature = "ui_blocking")]
+pub use camera::camera_system::EguiBlockInputState;
