@@ -170,6 +170,7 @@ fn detect_zoom_level(
                 / res_manager.zoom_manager.scale.x;
 
             while !(3. ..=7.).contains(&width) {
+                info!("Zoom level: {}", res_manager.zoom_manager.zoom_level);
                 if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
                     res_manager.zoom_manager.zoom_level -= 1;
                     res_manager.zoom_manager.scale *= 2.0;
@@ -179,7 +180,7 @@ fn detect_zoom_level(
                     res_manager.zoom_manager.zoom_level += 1;
                     res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
                 } else {
-                    return;
+                    break;
                 }
                 width = camera_rect(q_windows.single(), projection.clone()).0
                     / res_manager.zoom_manager.tile_quality
