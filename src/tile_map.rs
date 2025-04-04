@@ -168,25 +168,29 @@ fn detect_zoom_level(
                 / res_manager.zoom_manager.tile_quality
                 / res_manager.zoom_manager.scale.x;
 
-                if let Ok(camera) = camera_query.get_single_mut() {
-                    let reference_point = res_manager.location_manager_to_point();
-                    let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
-                    while !(3. ..=7.).contains(&width) {
-                    if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
-                        res_manager.zoom_manager.zoom_level -= 1;
-                        res_manager.zoom_manager.scale *= 2.0;
-                        res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
+            while !(3. ..=7.).contains(&width) {
+                if width > 7. && res_manager.zoom_manager.zoom_level > 3 {
+                    res_manager.zoom_manager.zoom_level -= 1;
+                    res_manager.zoom_manager.scale *= 2.0;
+                    res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
+                    if let Ok(camera) = camera_query.get_single_mut() {
+                        let reference_point = res_manager.location_manager_to_point();
+                        let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
                         res_manager.chunk_manager.displacement = 
                             (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
-                    } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
-                        res_manager.zoom_manager.scale /= 2.0;
-                        res_manager.zoom_manager.zoom_level += 1;
-                        res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
-                        res_manager.chunk_manager.displacement = 
-                            (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
-                    } else {
-                        return;
                     }
+                } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
+                    res_manager.zoom_manager.scale /= 2.0;
+                    res_manager.zoom_manager.zoom_level += 1;
+                    res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
+                    if let Ok(camera) = camera_query.get_single_mut() {
+                        let reference_point = res_manager.location_manager_to_point();
+                        let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
+                        res_manager.chunk_manager.displacement = 
+                            (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
+                    }
+                } else {
+                    return;
                 }
                 width = camera_rect(q_windows.single(), projection.clone()).0
                     / res_manager.zoom_manager.tile_quality
