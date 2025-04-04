@@ -105,7 +105,7 @@ pub fn camera_change(
             position.position.y,
             tile_map_res.chunk_manager.refrence_long_lat,
             tile_map_res.chunk_manager.displacement,
-            14,
+            tile_map_res.zoom_manager.starting_zoom,
             tile_map_res.zoom_manager.tile_quality,
         );
 
