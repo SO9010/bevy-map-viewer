@@ -5,8 +5,7 @@ description = "Work with xyz tiles, such as the ones found on OpenStreetMap and 
 readme = "README.md"
 repository = "https://github.com/SO9010/bevy-map-viewer"
 license = "Apache-2.0"
-keywords = ["bevy", "map", "tiles", "openstreetmap", "osm", "slippy"]
-categories = ["game-development", "graphics", "mapping"]
+keywords = ["bevy", "map", "openstreetmap", "osm", "slippy"]
 version = "0.1.0"
 edition = "2021"
 
