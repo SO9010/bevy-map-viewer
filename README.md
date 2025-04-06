@@ -30,15 +30,16 @@ To help ensure your game entities appear above the map tiles:
 4. Make the camera order so that the layer 1 is on top
 
 ```rust
-fn setup_camera(
-    mut commands: Commands,
-    res_manager: Option<Res<TileMapResources>>,
-) {
+fn setup_camera(mut commands: Commands, res_manager: Option<Res<TileMapResources>>) {
     if let Some(res_manager) = res_manager {
-        let starting = res_manager.location_manager.location.to_game_coords(res_manager.clone());
+        let starting = res_manager
+            .location_manager
+            .location
+            .to_game_coords(res_manager.clone());
+        
         commands.spawn((
             Camera2d,
-            DRAWERMARKER,
+            DrawCamera,
             RenderLayers::from_layers(&[1]),
             Camera { 
                 order: 1,
@@ -47,24 +48,6 @@ fn setup_camera(
             Transform {
                 translation: Vec3::new(starting.x, starting.y, 1.0),
                 ..Default::default()
-            },
-            PanCam {
-                grab_buttons: vec![MouseButton::Middle],
-                move_keys: DirectionKeys {
-                    up:    vec![KeyCode::ArrowUp],
-                    down:  vec![KeyCode::ArrowDown],
-                    left:  vec![KeyCode::ArrowLeft],
-                    right: vec![KeyCode::ArrowRight],
-                },
-                speed: 150.,
-                enabled: true,
-                zoom_to_cursor: true,
-                min_scale: f32::NEG_INFINITY,
-                max_scale: f32::INFINITY,
-                min_x: f32::NEG_INFINITY,
-                max_x: f32::INFINITY,
-                min_y: f32::NEG_INFINITY,
-                max_y: f32::INFINITY,
             },
         ));
         commands.spawn((
@@ -76,21 +59,21 @@ fn setup_camera(
                 ..default() 
             },
             Transform {
-                translation: Vec3::new(starting.x, starting.y, 1.0),
+                translation: Vec3::new(starting.x, starting.y, 0.0),
                 ..Default::default()
             },
             PanCam {
                 grab_buttons: vec![MouseButton::Middle],
                 move_keys: DirectionKeys {
-                    up:    vec![KeyCode::ArrowUp],
-                    down:  vec![KeyCode::ArrowDown],
-                    left:  vec![KeyCode::ArrowLeft],
+                    up: vec![KeyCode::ArrowUp],
+                    down: vec![KeyCode::ArrowDown],
+                    left: vec![KeyCode::ArrowLeft],
                     right: vec![KeyCode::ArrowRight],
                 },
-                speed: 150.,
+                speed: 400.,
                 enabled: true,
                 zoom_to_cursor: true,
-                min_scale: f32::NEG_INFINITY,
+                min_scale: 0.01,
                 max_scale: f32::INFINITY,
                 min_x: f32::NEG_INFINITY,
                 max_x: f32::INFINITY,
@@ -100,6 +83,24 @@ fn setup_camera(
         ));
     } else {
         error!("TileMapResources not found. Please add the tilemap addon first.");
+    }
+}
+
+fn sync_cameras(
+    primary_query: Query<(&Transform, &OrthographicProjection), With<MapViewerMarker>>,
+    mut secondary_query: Query<(&mut Transform, &mut OrthographicProjection), (With<DrawCamera>, Without<MapViewerMarker>)>,
+) {
+    if let Ok((primary_transform, primary_projection)) = primary_query.get_single() {
+        if let Ok((mut secondary_transform, mut secondary_projection)) = secondary_query.get_single_mut() {
+            secondary_transform.translation.x = primary_transform.translation.x;
+            secondary_transform.translation.y = primary_transform.translation.y;
+            secondary_transform.scale = primary_transform.scale;
+            
+            secondary_projection.scale = primary_projection.scale;
+            secondary_projection.area = primary_projection.area;
+            secondary_projection.far = primary_projection.far;
+            secondary_projection.near = primary_projection.near;
+        }
     }
 }
 ```
