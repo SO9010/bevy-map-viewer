@@ -17,6 +17,7 @@ pub struct MapViewerPlugin {
     pub starting_zoom: u32,
     pub tile_quality: f32,
     pub cache_dir: String,
+    pub starting_url: Option<String>,
 }
 
 impl Plugin for MapViewerPlugin {
@@ -27,8 +28,8 @@ impl Plugin for MapViewerPlugin {
                 starting_zoom: self.starting_zoom,
                 tile_quality: self.tile_quality,
                 cache_dir: self.cache_dir.clone(),
+                starting_url: self.starting_url.clone(),
             });
-           
     }
 }
 
@@ -36,6 +37,5 @@ impl Plugin for MapViewerPlugin {
 pub use camera::camera_helper::CameraTrackingEvent;
 pub use tile_map::TileMapPlugin;
 pub use types::*;
-pub use api::{get_rasta_data, get_mvt_data, buffer_to_bevy_image};
 #[cfg(feature = "ui_blocking")]
 pub use camera_helper::EguiBlockInputState;

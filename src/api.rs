@@ -1,23 +1,161 @@
-use std::{fs, io::{BufReader, Read}, path::Path};
+use std::{fs, io::{BufReader, Cursor, Read}, path::Path, time::Duration};
 
-use bevy::{asset::RenderAssetUsages, image::Image, render::render_resource::{Extent3d, TextureDimension, TextureFormat}};
+use bevy::{asset::RenderAssetUsages, image::Image, render::render_resource::{Extent3d, TextureDimension, TextureFormat}, utils::HashMap};
+use image::ImageReader;
 use mvt_reader::Reader;
 
 use raqote::{AntialiasMode, DrawOptions, DrawTarget, PathBuilder, SolidSource, Source, StrokeStyle};
+use ureq::Agent;
 
-pub fn tile_width_meters(zoom: u32) -> f64 {
-    let earth_circumference_meters = 40075016.686;
-    let num_tiles = 2_u32.pow(zoom) as f64;
-    earth_circumference_meters / num_tiles
+use crate::{tile_width_meters, TileType};
+
+#[derive(Debug, Clone)]
+pub struct TileRequestClient {
+    agent: Agent,
+    cache_dir: String,
+    tile_web_origin: HashMap<String, (bool, TileType)>,
 }
 
-pub fn get_rasta_data(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
-    send_image_tile_request(x, y, zoom, url, cache_dir)
+impl Default for TileRequestClient {
+    fn default() -> Self {
+        let mut tile_web_origin = HashMap::default();
+
+        tile_web_origin.insert(
+            "https://tile.openstreetmap.org".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=y".to_string(),
+            (true, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=m".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://mt1.google.com/vt/lyrs=s".to_string(),
+            (false, TileType::Raster),
+        );
+        tile_web_origin.insert(
+            "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(),
+            (false, TileType::Vector),
+        );
+        let config = Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(5)))
+            .build();
+        let agent: Agent = config.into();
+        TileRequestClient { 
+            agent,
+            // Change this to be in a cache dir
+            cache_dir: "cache".to_string(), 
+            tile_web_origin
+        }
+    }
 }
 
-pub fn get_mvt_data(x: u64, y: u64, zoom: u64, tile_quality: u32, _url: String, cache_dir: String) -> Vec<u8> {
-    let data = send_vector_request(x, y, zoom, "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(), cache_dir);
-    ofm_to_data_image(data, tile_quality, zoom as u32)
+impl TileRequestClient {
+    pub fn new(cache_dir: String, url: Option<String>) -> Self {
+        let mut me = TileRequestClient::default();
+        me.cache_dir = cache_dir;
+        if let Some(url) = url {
+            if me.tile_web_origin.contains_key(&url) {
+                me.enable_tile_web_origin(&url);
+            } else {
+                me.add_tile_web_origin(url, true, TileType::Raster);
+            }        
+        }
+        me
+    }
+
+    pub fn get_tile(&self, x: u64, y: u64, zoom: u64) -> Result<Vec<u8>, image::ImageError> {
+        let (_, tile_type) = self.get_enabled_tile_web_origins().unwrap().1;
+        let extension = match tile_type {
+            TileType::Raster => "png",
+            TileType::Vector => "pbf",
+        };
+
+        let url = self.get_enabled_tile_web_origins().unwrap().0;
+        let cache_dir = format!("{}/{}", self.cache_dir, url);
+        let cache_file: String = format!("{}/{}_{}_{}.{}", cache_dir.clone(), zoom, x, y, extension);
+        
+        // Check if the file exists in the cache
+        if Path::new(&cache_file).exists() {
+            return match tile_type {
+                TileType::Raster => decode_image(fs::read(&cache_file).expect("Failed to read cache file")),
+                TileType::Vector => ofm_to_data_image(fs::read(&cache_file).expect("Failed to read cache file").clone(), 256, zoom as u32),
+            };
+        }
+        
+        let mut req = format!("{}/{}/{}/{}.{}", url, zoom, x, y, extension);
+        if url.contains("google") {
+            req = format!("{}&x={x}&y={y}&z={zoom}", url);
+        }
+
+        // If not in cache, fetch from the network
+        let mut status = 429;
+        while status == 429 {
+            if let Ok(mut response) = self.agent.get(req.as_str()).call() {
+                if response.status() == 200 {
+                    let mut reader: BufReader<Box<dyn Read + Send + Sync>> = BufReader::new(Box::new(response.body_mut().as_reader()));
+                    let mut bytes = Vec::new();
+                    reader.read_to_end(&mut bytes).expect("Failed to read bytes from response");
+    
+                    // Save to cache
+                    fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+                    fs::write(&cache_file, &bytes).expect("Failed to write cache file");
+                    return match tile_type {
+                        TileType::Raster => decode_image(bytes),
+                        TileType::Vector => ofm_to_data_image(bytes.clone(), 256, zoom as u32),
+                    };
+                } else if response.status() == 429 {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                } else {
+                    status = 0;
+                }
+            }
+        }
+        Err(image::ImageError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to fetch tile: {}", status),
+        )))
+    }
+ 
+}
+
+impl TileRequestClient {
+    pub fn add_tile_web_origin(&mut self, url: String, enabled: bool, tile_type: TileType) {
+        self.tile_web_origin.insert(url, (enabled, tile_type));
+    }
+
+    pub fn enable_tile_web_origin(&mut self, url: &str) {
+        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
+            *enabled = true;
+        }
+    }
+
+    pub fn disable_all_tile_web_origins(&mut self) {
+        for (_, (enabled, _)) in self.tile_web_origin.iter_mut() {
+            *enabled = false;
+        }
+    }
+
+    pub fn enable_only_tile_web_origin(&mut self, url: &str) {
+        self.disable_all_tile_web_origins();
+
+        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
+            *enabled = true;
+            // Tell the chunks to upadte completely, 
+        }
+    }
+
+    pub fn get_enabled_tile_web_origins(&self) -> Option<(String, (bool, TileType))> {
+        for (url, (enabled, tile_type)) in self.tile_web_origin.clone() {
+            if enabled {
+                return Some((url, (enabled, tile_type)));
+            }
+        }
+        None
+    }
 }
 
 pub fn buffer_to_bevy_image(data: Vec<u8>, tile_quality: u32) -> Image {
@@ -34,91 +172,18 @@ pub fn buffer_to_bevy_image(data: Vec<u8>, tile_quality: u32) -> Image {
     )
 }
 
-/// https://wiki.openstreetmap.org/wiki/Raster_tile_providers
-fn send_image_tile_request(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
-    let cache_dir = format!("{}/{}", cache_dir, url);
-    let cache_file = format!("{}/{}_{}_{}.png", cache_dir, zoom, x, y);
-    
-    // Check if the file exists in the cache
-    if Path::new(&cache_file).exists() {
-        return png_to_image(fs::read(&cache_file).expect("Failed to read cache file"));
-    }
-    
-    let mut req = format!("{}/{}/{}/{}.png", url, zoom, x, y);
-    if url.contains("google") {
-        // can change the layers y for both roads and satalite, m for just roads and s for just satalite
-        req = format!("{}&x={x}&y={y}&z={zoom}", url);
-    }
-
-    // If not in cache, fetch from the network
-    let mut status = 429;
-    while status == 429 {
-        if let Ok(mut response) = ureq::get(&req).call() {
-            // info!("{}", format!("{}/{}/{}/{}.png", url, zoom, x, y));
-            if response.status() == 200 {
-                let mut reader: BufReader<Box<dyn Read + Send + Sync>> = BufReader::new(Box::new(response.body_mut().as_reader()));
-                let mut bytes = Vec::new();
-                reader.read_to_end(&mut bytes).expect("Failed to read bytes from response");
-
-                // Save to cache
-                fs::create_dir_all(cache_dir).expect("Failed to create cache directory");
-                fs::write(&cache_file, &bytes).expect("Failed to write cache file");
-
-                return png_to_image(bytes);
-            } else if response.status() == 429 {
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            } else {
-                status = 0;
-            }
-        }
-    }
-    vec![]
-}
-
 // Helper convert png to uncompressed image
-fn png_to_image(data: Vec<u8>) -> Vec<u8> {
-    let img = image::load_from_memory(&data).expect("Failed to decode PNG data");
+fn decode_image(data: Vec<u8>) -> Result<Vec<u8>, image::ImageError> {
+    // Failed to decode PNG data: Decoding(DecodingError { format: Exact(Jpeg), underlying: Some("No more bytes") })
+    let img = ImageReader::new(Cursor::new(data)).with_guessed_format()?.decode()?;
     let rgba = img.to_rgba8();
-    rgba.to_vec()
-}
-
-fn send_vector_request(x: u64, y: u64, zoom: u64, url: String, cache_dir: String) -> Vec<u8> {
-    let cache_dir = format!("{}/{}", cache_dir, url);
-    let cache_file = format!("{}/{}_{}_{}.pbf", cache_dir, zoom, x, y);
-
-    // Check if the file exists in the cache
-    if Path::new(&cache_file).exists() {
-        return fs::read(&cache_file).expect("Failed to read cache file");
-    }
-
-    // If not in cache, fetch from the network
-    let mut status = 429;
-    while status == 429 {
-        if let Ok(mut response) = ureq::get(format!("{}/{}/{}/{}.pbf", url, zoom, x, y).as_str()).call() {
-            if response.status() == 200 {
-                let mut reader: BufReader<Box<dyn Read + Send + Sync>> = BufReader::new(Box::new(response.body_mut().as_reader()));
-                let mut bytes = Vec::new();
-                reader.read_to_end(&mut bytes).expect("Failed to read bytes from response");
-
-                // Save to cache
-                fs::create_dir_all(cache_dir).expect("Failed to create cache directory");
-                fs::write(&cache_file, &bytes).expect("Failed to write cache file");
-
-                return bytes;
-            } else if response.status() == 429 {
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            } else {
-                status = 0;
-            }
-        }
-    }
-    vec![]
+    Ok(rgba.to_vec())
 }
 
 /// This converts it to an image which is as many meters as the tile width This would be AAAMAAZZZING to multithread
 /// It would also be good to add a settings struct to control the colors, perhaps add background images and select what specificlly is rendered.
 // What would be good is if we slipt tile tiles into 4 when we start getting a zoom over the amount which cant go in anymore like over zoom = 16
-fn ofm_to_data_image(data: Vec<u8>, size: u32, zoom: u32) -> Vec<u8> {
+fn ofm_to_data_image(data: Vec<u8>, size: u32, zoom: u32) -> Result<Vec<u8>, image::ImageError> {
     let tile = Reader::new(data).unwrap();
     //let size_multiplyer = TILE_QUALITY as u32 / size ;
     let mut dt = DrawTarget::new(size as i32 , size as i32);
@@ -342,5 +407,5 @@ fn ofm_to_data_image(data: Vec<u8>, size: u32, zoom: u32) -> Vec<u8> {
         }
     }
 
-    dt.get_data_u8().to_vec()
+    Ok(dt.get_data_u8().to_vec())
 }

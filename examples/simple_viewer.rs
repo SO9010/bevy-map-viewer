@@ -13,6 +13,7 @@ fn main() {
             starting_zoom: 14,
             tile_quality: 256.0,
             cache_dir: "cache".to_string(),
+            starting_url: None,
         })
         .add_systems(Startup, setup_camera)
         .add_systems(Update, handle_mouse)

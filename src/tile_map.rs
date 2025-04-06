@@ -5,9 +5,9 @@ use std::thread;
 #[cfg(feature = "ui_blocking")]
 use crate::camera::camera_helper::EguiBlockInputState;
 use crate::{
-    api::{buffer_to_bevy_image, get_mvt_data, get_rasta_data},
+    api::buffer_to_bevy_image,
     types::{
-        game_to_coord, Coord, InitTileMapPlugin, TileMapResources, TileType, UpdateChunkEvent,
+        game_to_coord, Coord, InitTileMapPlugin, TileMapResources, UpdateChunkEvent,
         ZoomChangedEvent,
     },
 };
@@ -18,6 +18,7 @@ use crate::{
 pub struct TileMapPlugin {
     pub starting_location: Coord,
     pub starting_zoom: u32,
+    pub starting_url: Option<String>,
     pub tile_quality: f32,
     pub cache_dir: String,
 }
@@ -32,6 +33,7 @@ impl Plugin for TileMapPlugin {
                 starting_zoom: self.starting_zoom,
                 tile_quality: self.tile_quality,
                 cache_dir: self.cache_dir.clone(),
+                starting_url: self.starting_url.clone(),
             })
             .insert_resource(Clean::default())
             .add_systems(Update, detect_zoom_level)
@@ -56,73 +58,44 @@ fn spawn_chunks_around_middle(
     mut camera_event_reader: EventReader<UpdateChunkEvent>,
 ) {
     for _ in camera_event_reader.read() {
-        let chunk_manager_clone = res_manager.chunk_manager.clone();
-        let enabled_origins = chunk_manager_clone.get_enabled_tile_web_origins();
-        if let Some((url, (_, tile_type))) = enabled_origins {
-            let chunk_pos = camera_pos_to_chunk_pos(
-                &res_manager.location_manager_to_point(),
-                res_manager.zoom_manager.tile_quality,
-            );
-            let range = 4;
+        let chunk_pos = camera_pos_to_chunk_pos(
+            &res_manager.location_manager_to_point(),
+            res_manager.zoom_manager.tile_quality,
+        );
+        let range = 4;
 
-            for y in (chunk_pos.y - range)..=(chunk_pos.y + range) {
-                for x in (chunk_pos.x - range)..=(chunk_pos.x + range) {
-                    let chunk_pos = IVec2::new(x, y);
-                    if !res_manager
-                        .chunk_manager
-                        .spawned_chunks
-                        .contains(&chunk_pos)
-                    {
-                        let tx = chunk_sender.clone();
-                        let cache_folder = res_manager.cache_folder.clone();
-                        let zoom_manager = res_manager.zoom_manager.clone();
-                        let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
-                        let world_pos =
-                            chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
-                        let position = game_to_coord(
-                            world_pos.x,
-                            world_pos.y,
-                            refrence_long_lat,
-                            Vec2::ZERO,
-                            res_manager.zoom_manager.zoom_level,
-                            zoom_manager.tile_quality,
-                        );
-                        let url = url.clone();
-                        let tile_type = tile_type.clone();
-                        thread::spawn(move || {
-                            let tile_coords = position.to_tile_coords(zoom_manager.zoom_level);
+        for y in (chunk_pos.y - range)..=(chunk_pos.y + range) {
+            for x in (chunk_pos.x - range)..=(chunk_pos.x + range) {
+                let chunk_pos = IVec2::new(x, y);
+                if !res_manager
+                    .chunk_manager
+                    .spawned_chunks
+                    .contains(&chunk_pos)
+                {
+                    let tx = chunk_sender.clone();
+                    let zoom_manager = res_manager.zoom_manager.clone();
+                    let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
+                    let world_pos =
+                        chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
+                    let position = game_to_coord(
+                        world_pos.x,
+                        world_pos.y,
+                        refrence_long_lat,
+                        Vec2::ZERO,
+                        res_manager.zoom_manager.zoom_level,
+                        zoom_manager.tile_quality,
+                    );
+                    let tile_requester = res_manager.tile_request_client.clone();
+                    thread::spawn(move || {
+                        let tile_coords = position.to_tile_coords(zoom_manager.zoom_level);
+                        let _ = tx.send((chunk_pos, tile_requester.get_tile(
+                            tile_coords.x as u64,
+                            tile_coords.y as u64,
+                            zoom_manager.zoom_level as u64
+                        )));
+                    });
 
-                            match tile_type {
-                                TileType::Raster => {
-                                    let tile_image = get_rasta_data(
-                                        tile_coords.x as u64,
-                                        tile_coords.y as u64,
-                                        zoom_manager.zoom_level as u64,
-                                        url.to_string(),
-                                        cache_folder,
-                                    );
-                                    if let Err(e) = tx.send((chunk_pos, tile_image)) {
-                                        error!("Failed to send chunk data: {:?}", e);
-                                    }
-                                }
-                                TileType::Vector => {
-                                    let tile_image = get_mvt_data(
-                                        tile_coords.x as u64,
-                                        tile_coords.y as u64,
-                                        zoom_manager.zoom_level as u64,
-                                        zoom_manager.tile_quality as u32,
-                                        url.to_string(),
-                                        cache_folder,
-                                    );
-                                    if let Err(e) = tx.send((chunk_pos, tile_image)) {
-                                        error!("Failed to send chunk data: {:?}", e);
-                                    }
-                                }
-                            }
-                        });
-
-                        res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
-                    }
+                    res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
                 }
             }
         }
@@ -163,6 +136,7 @@ fn detect_zoom_level(
         return;
     }
     if cooldown.0.tick(time.delta()).finished() {
+        let mut changed = false;
         if let Ok(projection) = ortho_projection_query.get_single_mut() {
             let mut width = camera_rect(q_windows.single(), projection.clone()).0
                 / res_manager.zoom_manager.tile_quality
@@ -173,22 +147,12 @@ fn detect_zoom_level(
                     res_manager.zoom_manager.zoom_level -= 1;
                     res_manager.zoom_manager.scale *= 2.0;
                     res_manager.chunk_manager.refrence_long_lat *= Coord { lat: 2., long: 2. };
-                    if let Ok(camera) = camera_query.get_single_mut() {
-                        let reference_point = res_manager.location_manager_to_point();
-                        let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
-                        res_manager.chunk_manager.displacement = 
-                            (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
-                    }
+                    changed = true;
                 } else if width < 3. && res_manager.zoom_manager.zoom_level < 20 {
                     res_manager.zoom_manager.scale /= 2.0;
                     res_manager.zoom_manager.zoom_level += 1;
                     res_manager.chunk_manager.refrence_long_lat /= Coord { lat: 2., long: 2. };
-                    if let Ok(camera) = camera_query.get_single_mut() {
-                        let reference_point = res_manager.location_manager_to_point();
-                        let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
-                        res_manager.chunk_manager.displacement = 
-                            (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
-                    }
+                    changed = true;
                 } else {
                     return;
                 }
@@ -196,16 +160,25 @@ fn detect_zoom_level(
                     / res_manager.zoom_manager.tile_quality
                     / res_manager.zoom_manager.scale.x;
             }
+            
+            if changed {
+                if let Ok(camera) = camera_query.get_single_mut() {
+                    let reference_point = res_manager.location_manager_to_point();
+                    let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
+                    res_manager.chunk_manager.displacement = 
+                        (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
+                }
+                let layer = res_manager.chunk_manager.layer_management.last().unwrap() + 1.0;
+                res_manager.chunk_manager.layer_management.push(layer);
+                res_manager.zoom_manager.scale.z = layer;
 
-            let layer = res_manager.chunk_manager.layer_management.last().unwrap() + 1.0;
-            res_manager.chunk_manager.layer_management.push(layer);
-            res_manager.zoom_manager.scale.z = layer;
-
-            zoom_event.send(ZoomChangedEvent);
-            chunk_writer.send(UpdateChunkEvent);
-            res_manager.chunk_manager.spawned_chunks.clear();
-            res_manager.chunk_manager.to_spawn_chunks.clear();
-            cooldown.0.reset();
+                zoom_event.send(ZoomChangedEvent);
+                chunk_writer.send(UpdateChunkEvent);
+                res_manager.chunk_manager.spawned_chunks.clear();
+                res_manager.chunk_manager.to_spawn_chunks.clear();
+                cooldown.0.reset();
+            }
+            
         } else {
             error!("Failed to get camera projection");
         }
@@ -220,7 +193,7 @@ fn detect_zoom_level(
 
 // Chunk handling //
 
-type ChunkData = (IVec2, Vec<u8>);
+type ChunkData = (IVec2, Result<Vec<u8>, image::ImageError>);
 type ChunkSenderType = Sender<ChunkData>;
 type ChunkReceiverType = Receiver<ChunkData>;
 
@@ -233,10 +206,10 @@ struct ChunkLayer(f32, IVec2);
 struct TileMarker;
 
 #[derive(Resource, Deref)]
-struct ChunkReceiver(Receiver<(IVec2, Vec<u8>)>); // Use Vec<u8> for raw image data
+struct ChunkReceiver(Receiver<(IVec2, Result<Vec<u8>, image::ImageError>)>); // Use Vec<u8> for raw image data
 
 #[derive(Resource, Deref)]
-struct ChunkSender(Sender<(IVec2, Vec<u8>)>);
+struct ChunkSender(Sender<(IVec2, Result<Vec<u8>, image::ImageError>)>);
 
 fn camera_pos_to_chunk_pos(camera_pos: &Vec2, tile_quality: f32) -> IVec2 {
     let camera_pos = Vec2::new(camera_pos.x, camera_pos.y) / tile_quality;
@@ -255,19 +228,24 @@ fn read_tile_map_receiver(
     mut res_manager: ResMut<TileMapResources>,
 ) {
     let mut new_chunks = Vec::new();
-
     while let Ok((chunk_pos, raw_image_data)) = map_receiver.try_recv() {
         if !res_manager
             .chunk_manager
             .to_spawn_chunks
             .contains_key(&chunk_pos)
+            && raw_image_data.is_ok()
         {
             new_chunks.push((chunk_pos, raw_image_data));
         }
     }
 
     for (pos, data) in new_chunks {
-        res_manager.chunk_manager.to_spawn_chunks.insert(pos, data);
+        if let Ok(data) = data {
+            res_manager
+                .chunk_manager
+                .to_spawn_chunks
+                .insert(pos, data);
+        }
     }
 }
 

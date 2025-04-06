@@ -7,16 +7,19 @@ use std::{
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
 
+use crate::api::TileRequestClient;
+
 pub struct InitTileMapPlugin {
     pub starting_location: Coord,
     pub starting_zoom: u32,
+    pub starting_url: Option<String>,
     pub tile_quality: f32,
     pub cache_dir: String,
 }
 
 impl Plugin for InitTileMapPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TileMapResources::new(self.starting_location, self.starting_zoom, self.tile_quality, self.cache_dir.clone()))
+        app.insert_resource(TileMapResources::new(self.starting_location, self.starting_zoom, self.starting_url.clone(), self.tile_quality, self.cache_dir.clone()))
             .add_event::<ZoomChangedEvent>()
             .add_event::<UpdateChunkEvent>()
             .add_systems(Startup, send_initial_events);
@@ -28,16 +31,16 @@ pub struct TileMapResources {
     pub zoom_manager: ZoomManager,
     pub chunk_manager: ChunkManager,
     pub location_manager: Location,
-    pub cache_folder: String,
+    pub tile_request_client: TileRequestClient,
 }
 
 impl TileMapResources {
-    pub fn new(starting_location: Coord, zoom: u32, tile_quality: f32, cache_dir: String) -> Self {
+    pub fn new(starting_location: Coord, zoom: u32, starting_url: Option<String>, tile_quality: f32, cache_dir: String) -> Self {
         Self {
             zoom_manager: ZoomManager::new(zoom, tile_quality),
             chunk_manager: ChunkManager::new(),
             location_manager: Location::new(starting_location),
-            cache_folder: cache_dir,
+            tile_request_client: TileRequestClient::new(cache_dir, starting_url),
         }
     }
 
@@ -84,6 +87,11 @@ pub struct WorldSpaceRect {
     pub bottom_right: Coord,
 }
 
+pub fn tile_width_meters(zoom: u32) -> f64 {
+    let earth_circumference_meters = 40075016.686;
+    let num_tiles = 2_u32.pow(zoom) as f64;
+    earth_circumference_meters / num_tiles
+}
 pub enum DistanceType {
     Km,
     M,
