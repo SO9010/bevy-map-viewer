@@ -14,6 +14,7 @@ pub struct TileRequestClient {
     agent: Agent,
     cache_dir: String,
     tile_web_origin: HashMap<String, (bool, TileType)>,
+    pub tile_web_origin_changed: bool,
 }
 
 impl Default for TileRequestClient {
@@ -48,7 +49,8 @@ impl Default for TileRequestClient {
             agent,
             // Change this to be in a cache dir
             cache_dir: "cache".to_string(), 
-            tile_web_origin
+            tile_web_origin,
+            tile_web_origin_changed: false,
         }
     }
 }
@@ -124,17 +126,20 @@ impl TileRequestClient {
 
 impl TileRequestClient {
     pub fn add_tile_web_origin(&mut self, url: String, enabled: bool, tile_type: TileType) {
+        self.tile_web_origin_changed = true;
         self.tile_web_origin.insert(url, (enabled, tile_type));
     }
 
     pub fn enable_tile_web_origin(&mut self, url: &str) {
         if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
+            self.tile_web_origin_changed = true;
             *enabled = true;
         }
     }
 
     pub fn disable_all_tile_web_origins(&mut self) {
         for (_, (enabled, _)) in self.tile_web_origin.iter_mut() {
+            self.tile_web_origin_changed = true;
             *enabled = false;
         }
     }

@@ -183,8 +183,8 @@ fn detect_zoom_level(
             error!("Failed to get camera projection");
         }
     }
-    if res_manager.chunk_manager.tile_web_origin_changed {
-        res_manager.chunk_manager.tile_web_origin_changed = false;
+    if res_manager.tile_request_client.tile_web_origin_changed {
+        res_manager.tile_request_client.tile_web_origin_changed = false;
         chunk_writer.send(UpdateChunkEvent);
         clean.clean = true;
         cooldown.0.reset();

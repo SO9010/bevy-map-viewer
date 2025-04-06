@@ -440,71 +440,12 @@ pub struct ChunkManager {
     pub spawned_chunks: HashSet<IVec2>,
     pub to_spawn_chunks: HashMap<IVec2, Vec<u8>>, // Store raw image data
     pub refrence_long_lat: Coord,
-    pub tile_web_origin: HashMap<String, (bool, TileType)>,
-    pub tile_web_origin_changed: bool,
     pub displacement: Vec2,
     pub layer_management: Vec<f32>,    
 }
 
-impl ChunkManager {
-    pub fn add_tile_web_origin(&mut self, url: String, enabled: bool, tile_type: TileType) {
-        self.tile_web_origin.insert(url, (enabled, tile_type));
-    }
-
-    pub fn enable_tile_web_origin(&mut self, url: &str) {
-        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
-            *enabled = true;
-        }
-    }
-
-    pub fn disable_all_tile_web_origins(&mut self) {
-        for (_, (enabled, _)) in self.tile_web_origin.iter_mut() {
-            *enabled = false;
-        }
-    }
-
-    pub fn enable_only_tile_web_origin(&mut self, url: &str) {
-        self.disable_all_tile_web_origins();
-
-        if let Some((enabled, _)) = self.tile_web_origin.get_mut(url) {
-            *enabled = true;
-            self.tile_web_origin_changed = true;
-        }
-    }
-
-    pub fn get_enabled_tile_web_origins(&self) -> Option<(String, (bool, TileType))> {
-        for (url, (enabled, tile_type)) in self.tile_web_origin.clone() {
-            if enabled {
-                return Some((url, (enabled, tile_type)));
-            }
-        }
-        None
-    }
-}
-
 impl Default for ChunkManager {
     fn default() -> Self {
-        let mut tile_web_origin = HashMap::default();
-        tile_web_origin.insert(
-            "https://tile.openstreetmap.org".to_string(),
-            (false, TileType::Raster),
-        );
-        tile_web_origin.insert(
-            "https://mt1.google.com/vt/lyrs=y".to_string(),
-            (true, TileType::Raster),
-        );
-        tile_web_origin.insert(
-            "https://mt1.google.com/vt/lyrs=m".to_string(),
-            (false, TileType::Raster),
-        );
-        tile_web_origin.insert(
-            "https://mt1.google.com/vt/lyrs=s".to_string(),
-            (false, TileType::Raster),
-        );
-        tile_web_origin.insert(
-            "https://tiles.openfreemap.org/planet/20250122_001001_pt".to_string(),
-            (false, TileType::Vector),
-        );
         Self {
             spawned_chunks: HashSet::default(),
             to_spawn_chunks: HashMap::default(),
@@ -512,8 +453,6 @@ impl Default for ChunkManager {
                 lat: 0.011,
                 long: 0.011,
             },
-            tile_web_origin,
-            tile_web_origin_changed: false,
             displacement: Vec2::new(0.0, 0.0),
             layer_management: vec![0.0],
         }
