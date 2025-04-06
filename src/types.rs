@@ -1,5 +1,5 @@
 use bevy::{
-    app::{App, Plugin, Startup}, ecs::{event::{Event, EventWriter}, system::Resource}, math::{IVec2, Vec2, Vec3}, utils::{HashMap, HashSet}
+    app::{App, Plugin, Startup}, ecs::{component::Component, event::{Event, EventWriter}, system::Resource}, math::{IVec2, Vec2, Vec3}, utils::{HashMap, HashSet}
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,6 +8,9 @@ use std::{
 };
 
 use crate::api::TileRequestClient;
+
+#[derive(Component, Debug, Clone)]
+pub struct MapViewerMarker;
 
 pub struct InitTileMapPlugin {
     pub starting_location: Coord,

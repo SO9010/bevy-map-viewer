@@ -1,6 +1,6 @@
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::{prelude::*, render::view::RenderLayers, window::PrimaryWindow};
 use bevy_egui::EguiPlugin;
-use bevy_map_viewer::{Coord, MapViewerPlugin, TileMapResources};
+use bevy_map_viewer::{Coord, MapViewerMarker, MapViewerPlugin, TileMapResources};
 use bevy_pancam::{DirectionKeys, PanCam, PanCamPlugin};
 
 fn main() {
@@ -49,11 +49,13 @@ fn setup_camera(
 ) {
     if let Some(res_manager) = res_manager {
         let starting = res_manager.location_manager.location.to_game_coords(res_manager.clone());
-
         commands.spawn((
             Camera2d,
-            Camera {
-                ..default()
+            MapViewerMarker,
+            RenderLayers::from_layers(&[0]),
+            Camera { 
+                order: 0,
+                ..default() 
             },
             Transform {
                 translation: Vec3::new(starting.x, starting.y, 1.0),

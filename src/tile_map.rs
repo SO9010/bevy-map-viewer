@@ -9,7 +9,7 @@ use crate::{
     types::{
         game_to_coord, Coord, InitTileMapPlugin, TileMapResources, UpdateChunkEvent,
         ZoomChangedEvent,
-    },
+    }, MapViewerMarker,
 };
 
 //------------------------------------------------------------------------------
@@ -116,8 +116,8 @@ fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32, f32
 #[allow(clippy::too_many_arguments)]
 fn detect_zoom_level(
     mut res_manager: ResMut<TileMapResources>,
-    mut ortho_projection_query: Query<&mut OrthographicProjection, With<Camera>>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    mut ortho_projection_query: Query<&mut OrthographicProjection, With<MapViewerMarker>>,
+    mut camera_query: Query<&mut Transform, With<MapViewerMarker>>,
     #[cfg(feature = "ui_blocking")] state: Res<EguiBlockInputState>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     mut cooldown: ResMut<ZoomCooldown>,
@@ -304,7 +304,7 @@ fn spawn_chunk(
 
 fn despawn_outofrange_chunks(
     mut commands: Commands,
-    camera_query: Query<&Transform, With<Camera>>,
+    camera_query: Query<&Transform, With<MapViewerMarker>>,
     chunks_query: Query<(Entity, &Transform, &ChunkLayer)>,
     mut res_manager: ResMut<TileMapResources>,
 ) {
