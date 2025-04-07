@@ -16,13 +16,10 @@ bevy_pancam = { version = "0.17.0", optional = true }
 mvt-reader = { version = "2.0.1", optional = true }
 geo = { version = "0.30.0", optional = true }
 raqote = { version = "0.8.5", optional = true }
-rstar = { version = "0.12.2", optional = true }
 ureq = { version = "3.0.10", optional = true }
 image = { version = "0.25.5", optional = true }
 bevy_egui = { version = "0.33.0", optional = true }
 serde = { version = "1.0.217", features = ["derive"], optional = true }
-geojson = { version = "0.24.1", optional = true }
-bevy_tasks = { version = "0.15.3", optional = true }
 
 
 [features]
@@ -30,7 +27,7 @@ default = ["standard","pancam","ui_blocking"]
 standard = [
     "tiles"
 ]
-tiles = ["dep:image", "dep:ureq", "dep:mvt-reader", "dep:geo", "dep:raqote", "dep:rstar", "dep:geojson", "dep:serde"]
+tiles = ["dep:image", "dep:ureq", "dep:mvt-reader", "dep:geo", "dep:raqote", "dep:serde"]
 ui_blocking = ["dep:bevy_egui"]
 pancam = ["dep:bevy_pancam"]
 
