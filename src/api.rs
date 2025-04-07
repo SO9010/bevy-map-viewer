@@ -13,7 +13,7 @@ use crate::{tile_width_meters, TileType};
 pub struct TileRequestClient {
     agent: Agent,
     cache_dir: String,
-    tile_web_origin: HashMap<String, (bool, TileType)>,
+    pub tile_web_origin: HashMap<String, (bool, TileType)>,
     pub tile_web_origin_changed: bool,
 }
 
