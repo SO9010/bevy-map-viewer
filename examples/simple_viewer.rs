@@ -6,9 +6,11 @@ use bevy_pancam::{DirectionKeys, PanCam, PanCamPlugin};
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin)
+        .add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: true,
+        })
         .add_plugins(PanCamPlugin)
-            .add_plugins(MapViewerPlugin { 
+        .add_plugins(MapViewerPlugin {
             starting_location: Coord::new(52.1951, 0.1313),
             starting_zoom: 14,
             tile_quality: 256.0,
@@ -26,36 +28,41 @@ fn handle_mouse(
     camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     res_manager: Res<TileMapResources>,
 ) {
-    let (camera, camera_transform) = camera.single();
-    if buttons.pressed(MouseButton::Left) {
-        if let Some(position) = q_windows.single().cursor_position() {
-            let world_pos = camera
-                .viewport_to_world_2d(camera_transform, position)
-                .unwrap();
-            
+    if let Ok((camera, camera_transform)) = camera.single() {
+        if buttons.pressed(MouseButton::Left) {
+            if let Some(position) = q_windows
+                .single()
+                .expect("Unable to get cursor position")
+                .cursor_position()
+            {
+                let world_pos = camera
+                    .viewport_to_world_2d(camera_transform, position)
+                    .unwrap();
+
                 info!(
                     "{:?} | {:?} | {:?}",
                     world_pos,
                     res_manager.point_to_coord(world_pos),
                     res_manager.coord_to_point(res_manager.point_to_coord(world_pos)),
                 );
+            }
         }
     }
 }
 
-fn setup_camera(
-    mut commands: Commands,
-    res_manager: Option<Res<TileMapResources>>,
-) {
+fn setup_camera(mut commands: Commands, res_manager: Option<Res<TileMapResources>>) {
     if let Some(res_manager) = res_manager {
-        let starting = res_manager.location_manager.location.to_game_coords(res_manager.clone());
+        let starting = res_manager
+            .location_manager
+            .location
+            .to_game_coords(res_manager.clone());
         commands.spawn((
             Camera2d,
             MapViewerMarker,
             RenderLayers::from_layers(&[0]),
-            Camera { 
+            Camera {
                 order: 0,
-                ..default() 
+                ..default()
             },
             Transform {
                 translation: Vec3::new(starting.x, starting.y, 1.0),
@@ -64,9 +71,9 @@ fn setup_camera(
             PanCam {
                 grab_buttons: vec![MouseButton::Middle],
                 move_keys: DirectionKeys {
-                    up:    vec![KeyCode::ArrowUp],
-                    down:  vec![KeyCode::ArrowDown],
-                    left:  vec![KeyCode::ArrowLeft],
+                    up: vec![KeyCode::ArrowUp],
+                    down: vec![KeyCode::ArrowDown],
+                    left: vec![KeyCode::ArrowLeft],
                     right: vec![KeyCode::ArrowRight],
                 },
                 speed: 150.,
@@ -84,4 +91,3 @@ fn setup_camera(
         error!("TileMapResources not found. Please add the tilemap addon first.");
     }
 }
-

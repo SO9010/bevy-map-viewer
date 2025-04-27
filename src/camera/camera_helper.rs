@@ -1,7 +1,10 @@
 use bevy::{
     core_pipeline::core_2d::Camera2d,
     ecs::{
-        event::{Event, EventReader, EventWriter}, query::{Changed, With}, system::{Query, ResMut}
+        event::{Event, EventReader, EventWriter},
+        query::{Changed, With},
+        resource::Resource,
+        system::{Query, ResMut},
     },
     math::{Vec2, Vec3},
     render::camera::{Camera, OrthographicProjection},
@@ -10,8 +13,6 @@ use bevy::{
 };
 
 #[cfg(feature = "ui_blocking")]
-use bevy::ecs::system::Resource;
-
 use crate::types::{game_to_coord, Coord, TileMapResources, UpdateChunkEvent};
 
 #[allow(unused)]
@@ -36,24 +37,8 @@ pub fn camera_space_to_lat_long_rect(
     let top = camera_translation.y - ((window_height * projection.scale) / 2.0);
 
     Some(geo::Rect::<f32>::new(
-        game_to_coord(
-            left,
-            bottom,
-            reference,
-            displacement,
-            zoom,
-            quality,
-        )
-        .to_tuple(),
-        game_to_coord(
-            right,
-            top,
-            reference,
-            displacement,
-            zoom,
-            quality,
-        )
-        .to_tuple(),
+        game_to_coord(left, bottom, reference, displacement, zoom, quality).to_tuple(),
+        game_to_coord(right, top, reference, displacement, zoom, quality).to_tuple(),
     ))
 }
 
@@ -66,7 +51,7 @@ pub fn camera_middle_to_lat_long(
     // This comes from the zoommanager
     displacement: Vec2,
 ) -> Coord {
-    let camera_translation = camera_query.get_single().unwrap().translation;
+    let camera_translation = camera_query.single().unwrap().translation;
     game_to_coord(
         camera_translation.x,
         camera_translation.y,
@@ -86,9 +71,9 @@ pub fn track_camera_position(
     camera_query: Query<&GlobalTransform, (With<Camera2d>, Changed<GlobalTransform>)>,
     mut camera_event_writer: EventWriter<CameraTrackingEvent>,
 ) {
-    if let Ok(transform) = camera_query.get_single() {
+    if let Ok(transform) = camera_query.single() {
         let new_position = transform.translation();
-        camera_event_writer.send(CameraTrackingEvent {
+        camera_event_writer.write(CameraTrackingEvent {
             position: new_position,
         });
     }
@@ -111,7 +96,7 @@ pub fn camera_change(
 
         if movement != tile_map_res.location_manager.location {
             tile_map_res.location_manager.location = movement;
-            event_writer.send(UpdateChunkEvent);
+            event_writer.write(UpdateChunkEvent);
         }
     }
 }

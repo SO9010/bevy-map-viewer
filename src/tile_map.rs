@@ -1,4 +1,6 @@
-use bevy::{input::mouse::MouseWheel, prelude::*, render::view::RenderLayers, window::PrimaryWindow};
+use bevy::{
+    input::mouse::MouseWheel, prelude::*, render::view::RenderLayers, window::PrimaryWindow,
+};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::thread;
 
@@ -9,7 +11,8 @@ use crate::{
     types::{
         game_to_coord, Coord, InitTileMapPlugin, TileMapResources, UpdateChunkEvent,
         ZoomChangedEvent,
-    }, MapViewerMarker,
+    },
+    MapViewerMarker,
 };
 
 //------------------------------------------------------------------------------
@@ -75,8 +78,7 @@ fn spawn_chunks_around_middle(
                     let tx = chunk_sender.clone();
                     let zoom_manager = res_manager.zoom_manager.clone();
                     let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
-                    let world_pos =
-                        chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
+                    let world_pos = chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
                     let position = game_to_coord(
                         world_pos.x,
                         world_pos.y,
@@ -88,11 +90,14 @@ fn spawn_chunks_around_middle(
                     let tile_requester = res_manager.tile_request_client.clone();
                     thread::spawn(move || {
                         let tile_coords = position.to_tile_coords(zoom_manager.zoom_level);
-                        let _ = tx.send((chunk_pos, tile_requester.get_tile(
-                            tile_coords.x as u64,
-                            tile_coords.y as u64,
-                            zoom_manager.zoom_level as u64
-                        )));
+                        let _ = tx.send((
+                            chunk_pos,
+                            tile_requester.get_tile(
+                                tile_coords.x as u64,
+                                tile_coords.y as u64,
+                                zoom_manager.zoom_level as u64,
+                            ),
+                        ));
                     });
 
                     res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
@@ -106,17 +111,29 @@ fn spawn_chunks_around_middle(
 #[derive(Resource)]
 struct ZoomCooldown(pub Timer);
 
-fn camera_rect(window: &Window, projection: OrthographicProjection) -> (f32, f32) {
-    (
-        window.width() * projection.scale,
-        window.height() * projection.scale,
-    )
+fn camera_rect(window: &Window, projection: Projection) -> (f32, f32) {
+    match projection {
+        Projection::Orthographic(ortho) => {
+            let width = ortho.area.width();
+            let height = ortho.area.height();
+            (width, height)
+        }
+        Projection::Perspective(_) => {
+            let width = window.width();
+            let height = window.height();
+            (width, height)
+        }
+        Projection::Custom(_) => {
+            error!("Custom projection is not supported");
+            (0.0, 0.0)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn detect_zoom_level(
     mut res_manager: ResMut<TileMapResources>,
-    mut ortho_projection_query: Query<&mut OrthographicProjection, With<MapViewerMarker>>,
+    mut ortho_projection_query: Query<&mut Projection, With<MapViewerMarker>>,
     mut camera_query: Query<&mut Transform, With<MapViewerMarker>>,
     #[cfg(feature = "ui_blocking")] state: Res<EguiBlockInputState>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
@@ -137,9 +154,14 @@ fn detect_zoom_level(
     }
     if cooldown.0.tick(time.delta()).finished() {
         let mut changed = false;
-        if let Ok(projection) = ortho_projection_query.get_single_mut() {
-            let mut width = camera_rect(q_windows.single(), projection.clone()).0
-                / res_manager.zoom_manager.tile_quality
+        if let Ok(projection) = ortho_projection_query.single_mut() {
+            let mut width = camera_rect(
+                q_windows
+                    .single()
+                    .expect("Fail because of not being  bale to get window"),
+                projection.clone(),
+            )
+            .0 / res_manager.zoom_manager.tile_quality
                 / res_manager.zoom_manager.scale.x;
 
             while !(3. ..=7.).contains(&width) {
@@ -156,36 +178,42 @@ fn detect_zoom_level(
                 } else {
                     return;
                 }
-                width = camera_rect(q_windows.single(), projection.clone()).0
-                    / res_manager.zoom_manager.tile_quality
+                width = camera_rect(
+                    q_windows
+                        .single()
+                        .expect("Fail because of not being  bale to get window"),
+                    projection.clone(),
+                )
+                .0 / res_manager.zoom_manager.tile_quality
                     / res_manager.zoom_manager.scale.x;
             }
-            
+
             if changed {
-                if let Ok(camera) = camera_query.get_single_mut() {
+                if let Ok(camera) = camera_query.single_mut() {
                     let reference_point = res_manager.location_manager_to_point();
-                    let camera_pos_unscaled = camera.translation.xy() / res_manager.zoom_manager.scale.xy();
-                    res_manager.chunk_manager.displacement = 
-                        (reference_point - camera_pos_unscaled) * res_manager.zoom_manager.scale.xy();
+                    let camera_pos_unscaled =
+                        camera.translation.xy() / res_manager.zoom_manager.scale.xy();
+                    res_manager.chunk_manager.displacement = (reference_point
+                        - camera_pos_unscaled)
+                        * res_manager.zoom_manager.scale.xy();
                 }
                 let layer = res_manager.chunk_manager.layer_management.last().unwrap() + 1.0;
                 res_manager.chunk_manager.layer_management.push(layer);
                 res_manager.zoom_manager.scale.z = layer;
 
-                zoom_event.send(ZoomChangedEvent);
-                chunk_writer.send(UpdateChunkEvent);
+                zoom_event.write(ZoomChangedEvent);
+                chunk_writer.write(UpdateChunkEvent);
                 res_manager.chunk_manager.spawned_chunks.clear();
                 res_manager.chunk_manager.to_spawn_chunks.clear();
                 cooldown.0.reset();
             }
-            
         } else {
             error!("Failed to get camera projection");
         }
     }
     if res_manager.tile_request_client.tile_web_origin_changed {
         res_manager.tile_request_client.tile_web_origin_changed = false;
-        chunk_writer.send(UpdateChunkEvent);
+        chunk_writer.write(UpdateChunkEvent);
         clean.clean = true;
         cooldown.0.reset();
     }
@@ -241,10 +269,7 @@ fn read_tile_map_receiver(
 
     for (pos, data) in new_chunks {
         if let Ok(data) = data {
-            res_manager
-                .chunk_manager
-                .to_spawn_chunks
-                .insert(pos, data);
+            res_manager.chunk_manager.to_spawn_chunks.insert(pos, data);
         }
     }
 }
@@ -313,14 +338,15 @@ fn despawn_outofrange_chunks(
     if res_manager.chunk_manager.layer_management.len() > 2 {
         let oldest_layer = res_manager.chunk_manager.layer_management[0];
         for (entity, _, chunk_layer) in chunks_query.iter() {
-            if chunk_layer.0 == oldest_layer && !chunks_to_remove.contains(&(entity, chunk_layer.1)) {
+            if chunk_layer.0 == oldest_layer && !chunks_to_remove.contains(&(entity, chunk_layer.1))
+            {
                 chunks_to_remove.push((entity, chunk_layer.1));
             }
         }
         res_manager.chunk_manager.layer_management.remove(0);
     }
 
-    if let Ok(camera_transform) = camera_query.get_single() {
+    if let Ok(camera_transform) = camera_query.single() {
         let camera_pos = camera_transform.translation.xy();
         for (entity, chunk_transform, chunk_layer) in chunks_query.iter() {
             let chunk_world_pos: Vec2 = chunk_transform.translation.xy();
@@ -337,7 +363,7 @@ fn despawn_outofrange_chunks(
 
     for (entity, chunk_pos) in chunks_to_remove {
         res_manager.chunk_manager.spawned_chunks.remove(&chunk_pos);
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 
@@ -356,7 +382,7 @@ fn clean_tile_map(
     if clean.clean {
         clean.clean = false;
         for (entity, _) in chunk_query.iter() {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
         res_manager.chunk_manager.spawned_chunks.clear();
         res_manager.chunk_manager.to_spawn_chunks.clear();
