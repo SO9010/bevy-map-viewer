@@ -51,7 +51,8 @@ impl Plugin for TileMapPlugin {
                 )
                     .chain(),
             )
-            .insert_resource(ZoomCooldown(Timer::from_seconds(0.2, TimerMode::Repeating)));
+            .insert_resource(ZoomCooldown(Timer::from_seconds(0.2, TimerMode::Repeating)))
+            .insert_resource(MoveCooldown(Timer::from_seconds(0.2, TimerMode::Repeating)));
     }
 }
 
@@ -59,48 +60,58 @@ fn spawn_chunks_around_middle(
     chunk_sender: Res<ChunkSender>,
     mut res_manager: ResMut<TileMapResources>,
     mut camera_event_reader: EventReader<UpdateChunkEvent>,
+    mut cooldown: ResMut<MoveCooldown>,
+    time: Res<Time>,
+    #[cfg(feature = "ui_blocking")] state: Res<EguiBlockInputState>,
 ) {
-    for _ in camera_event_reader.read() {
-        let chunk_pos = camera_pos_to_chunk_pos(
-            &res_manager.location_manager_to_point(),
-            res_manager.zoom_manager.tile_quality,
-        );
-        let range = 4;
+    #[cfg(feature = "ui_blocking")]
+    if state.block_input {
+        return;
+    }
+    if cooldown.0.tick(time.delta()).finished() {
+        for _ in camera_event_reader.read() {
+            let chunk_pos = camera_pos_to_chunk_pos(
+                &res_manager.location_manager_to_point(),
+                res_manager.zoom_manager.tile_quality,
+            );
+            let range = 4;
 
-        for y in (chunk_pos.y - range)..=(chunk_pos.y + range) {
-            for x in (chunk_pos.x - range)..=(chunk_pos.x + range) {
-                let chunk_pos = IVec2::new(x, y);
-                if !res_manager
-                    .chunk_manager
-                    .spawned_chunks
-                    .contains(&chunk_pos)
-                {
-                    let tx = chunk_sender.clone();
-                    let zoom_manager = res_manager.zoom_manager.clone();
-                    let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
-                    let world_pos = chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
-                    let position = game_to_coord(
-                        world_pos.x,
-                        world_pos.y,
-                        refrence_long_lat,
-                        Vec2::ZERO,
-                        res_manager.zoom_manager.zoom_level,
-                        zoom_manager.tile_quality,
-                    );
-                    let tile_requester = res_manager.tile_request_client.clone();
-                    thread::spawn(move || {
-                        let tile_coords = position.to_tile_coords(zoom_manager.zoom_level);
-                        let _ = tx.send((
-                            chunk_pos,
-                            tile_requester.get_tile(
-                                tile_coords.x as u64,
-                                tile_coords.y as u64,
-                                zoom_manager.zoom_level as u64,
-                            ),
-                        ));
-                    });
+            for y in (chunk_pos.y - range)..=(chunk_pos.y + range) {
+                for x in (chunk_pos.x - range)..=(chunk_pos.x + range) {
+                    let chunk_pos = IVec2::new(x, y);
+                    if !res_manager
+                        .chunk_manager
+                        .spawned_chunks
+                        .contains(&chunk_pos)
+                    {
+                        let tx = chunk_sender.clone();
+                        let zoom_manager = res_manager.zoom_manager.clone();
+                        let refrence_long_lat = res_manager.chunk_manager.refrence_long_lat;
+                        let world_pos =
+                            chunk_pos_to_world_pos(chunk_pos, zoom_manager.tile_quality);
+                        let position = game_to_coord(
+                            world_pos.x,
+                            world_pos.y,
+                            refrence_long_lat,
+                            Vec2::ZERO,
+                            res_manager.zoom_manager.zoom_level,
+                            zoom_manager.tile_quality,
+                        );
+                        let tile_requester = res_manager.tile_request_client.clone();
+                        thread::spawn(move || {
+                            let tile_coords = position.to_tile_coords(zoom_manager.zoom_level);
+                            let _ = tx.send((
+                                chunk_pos,
+                                tile_requester.get_tile(
+                                    tile_coords.x as u64,
+                                    tile_coords.y as u64,
+                                    zoom_manager.zoom_level as u64,
+                                ),
+                            ));
+                        });
 
-                    res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
+                        res_manager.chunk_manager.spawned_chunks.insert(chunk_pos);
+                    }
                 }
             }
         }
@@ -110,6 +121,9 @@ fn spawn_chunks_around_middle(
 // Zoom handling //
 #[derive(Resource)]
 struct ZoomCooldown(pub Timer);
+
+#[derive(Resource)]
+struct MoveCooldown(pub Timer);
 
 fn camera_rect(window: &Window, projection: Projection) -> (f32, f32) {
     match projection {
