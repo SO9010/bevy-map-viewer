@@ -2,13 +2,13 @@ use std::{
     collections::HashMap,
     fs,
     io::{BufReader, Cursor, Read},
-    path::Path,
     time::Duration,
 };
 
 use bevy::{
     asset::RenderAssetUsages,
     image::Image,
+    log::info,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use image::ImageReader;
@@ -17,6 +17,7 @@ use mvt_reader::Reader;
 use raqote::{
     AntialiasMode, DrawOptions, DrawTarget, PathBuilder, SolidSource, Source, StrokeStyle,
 };
+use std::path::PathBuf;
 use ureq::Agent;
 
 use crate::{tile_width_meters, TileType};
@@ -89,12 +90,12 @@ impl TileRequestClient {
         };
 
         let url = self.get_enabled_tile_web_origins().unwrap().0;
-        let cache_dir = format!("{}/{}", self.cache_dir, url);
-        let cache_file: String =
-            format!("{}/{}_{}_{}.{}", cache_dir.clone(), zoom, x, y, extension);
-
+        let mut cache_dir = PathBuf::from(self.cache_dir.clone());
+        cache_dir.push(url.clone());
+        let mut cache_file = cache_dir.clone();
+        cache_file.push(format!("{}_{}_{}.{}", zoom, x, y, extension));
         // Check if the file exists in the cache
-        if Path::new(&cache_file).exists() {
+        if cache_file.exists() {
             return match tile_type {
                 TileType::Raster => {
                     decode_image(fs::read(&cache_file).expect("Failed to read cache file"))
