@@ -8,7 +8,6 @@ use std::{
 use bevy::{
     asset::RenderAssetUsages,
     image::Image,
-    log::info,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use image::ImageReader;
